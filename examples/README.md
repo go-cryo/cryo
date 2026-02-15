@@ -16,6 +16,10 @@ Cryo uses native Kubernetes resources for all configuration:
 
 ```
 examples/
+  rbac/
+    service-account.yaml  # ServiceAccount for the controller
+    role.yaml             # Role with required permissions
+    role-binding.yaml     # RoleBinding to bind the role
   hosts/
     s3-host.yaml          # S3-compatible storage host
     sftp-host.yaml        # SFTP storage host
@@ -30,6 +34,29 @@ examples/
     s3-credentials.yaml   # S3 access credentials secret
     pvc-backup.yaml       # PVC volume backup
 ```
+
+## RBAC
+
+The controller requires a ServiceAccount with specific permissions to manage Kubernetes resources. The `rbac/` directory contains the required manifests.
+
+**Apply:**
+
+```bash
+kubectl apply -f examples/rbac/
+```
+
+The Role grants the following permissions:
+
+| Resource | API Group | Verbs | Purpose |
+|----------|-----------|-------|---------|
+| `secrets` | `""` | get, list, watch, create, update, delete | Repository hosts, repositories, backup credentials |
+| `configmaps` | `""` | get, list, watch, create, update, delete | Backup job configs, controller settings |
+| `jobs` | `batch` | create, list, watch | Backup execution |
+| `pods` | `""` | delete, deletecollection | Cleanup of completed job pods |
+| `persistentvolumeclaims` | `""` | get, create, delete | Staging PVCs for backup orchestration |
+| `volumesnapshots` | `snapshot.storage.k8s.io` | get, list, create, delete | PVC backup snapshots |
+
+The VolumeSnapshot permissions are only needed if you use PVC backups. The Role is namespace-scoped -- the controller operates within a single namespace.
 
 ## Concepts
 
@@ -160,16 +187,19 @@ Set up a complete backup pipeline backing up a PostgreSQL database to S3:
 # 1. Create the namespace
 kubectl create namespace cryo
 
-# 2. Create a repository host (where backups are stored)
+# 2. Set up RBAC
+kubectl apply -f examples/rbac/
+
+# 3. Create a repository host (where backups are stored)
 kubectl apply -f examples/hosts/s3-host.yaml
 
-# 3. Create a repository (restic repo within the host)
+# 4. Create a repository (restic repo within the host)
 kubectl apply -f examples/repositories/repository.yaml
 
-# 4. Create the database credentials
+# 5. Create the database credentials
 kubectl apply -f examples/backupjobs/psql-credentials.yaml
 
-# 5. Create the backup job
+# 6. Create the backup job
 kubectl apply -f examples/backupjobs/psql-backup.yaml
 ```
 
