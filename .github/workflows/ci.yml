@@ -160,21 +160,51 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - name: Login to GHCR
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # On tag push: push by digest (no arch-suffixed tag)
+      - name: Build and push by digest
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        id: build-push
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.image.context }}
           file: ${{ matrix.image.dockerfile }}
           platforms: linux/${{ matrix.platform.arch }}
-          push: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
-          tags: ${{ env.DOCKER_IMAGE_URL }}:${{ github.ref_name }}-${{ matrix.platform.arch }}
           build-args: ${{ matrix.image.build_args }}
+          outputs: type=image,name=${{ env.DOCKER_IMAGE_URL }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build-push.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      # On non-tag: build only (verify the image builds)
+      - name: Build (no push)
+        if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          platforms: linux/${{ matrix.platform.arch }}
+          build-args: ${{ matrix.image.build_args }}
+          push: false
 
   manifest:
     needs: [build]
@@ -184,22 +214,37 @@ jobs:
     strategy:
       matrix:
         include:
-          - suffix: ""
-          - suffix: "-psql"
-          - suffix: "-s3"
-          - suffix: "-pvc"
+          - name: controller
+            suffix: ""
+          - name: psql
+            suffix: "-psql"
+          - name: s3
+            suffix: "-s3"
+          - name: pvc
+            suffix: "-pvc"
     env:
       DOCKER_IMAGE_URL: ghcr.io/${{ github.repository }}${{ matrix.suffix }}
     steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digest-${{ matrix.name }}-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create and push multi-arch manifest
+        working-directory: /tmp/digests
         run: |
-          docker manifest create ${{ env.DOCKER_IMAGE_URL }}:${{ github.ref_name }} \
-            ${{ env.DOCKER_IMAGE_URL }}:${{ github.ref_name }}-amd64 \
-            ${{ env.DOCKER_IMAGE_URL }}:${{ github.ref_name }}-arm64
-          docker manifest push ${{ env.DOCKER_IMAGE_URL }}:${{ github.ref_name }}
+          docker buildx imagetools create \
+            -t ${{ env.DOCKER_IMAGE_URL }}:${{ github.ref_name }} \
+            -t ${{ env.DOCKER_IMAGE_URL }}:latest \
+            $(printf '${{ env.DOCKER_IMAGE_URL }}@sha256:%s ' *)
