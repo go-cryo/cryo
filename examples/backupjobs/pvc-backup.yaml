@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pvc-backup
+  namespace: cryo
+  labels:
+    go-cryo.github.com/config: "true"
+data:
+  config: |
+    type: pvc
+    schedule: "0 4 * * *"
+    repositoryRef: "cryo/my-repo"
+    pvc:
+      claimName: my-application-data
+      volumeSnapshotClassName: csi-hostpath-snapclass
+      snapshotRetention: 3
+    retention:
+      keepLast: 7
+      keepDaily: 30
+      keepWeekly: 12
+      keepMonthly: 6

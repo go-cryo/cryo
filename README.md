@@ -57,6 +57,10 @@ Container images are published for `linux/amd64` and `linux/arm64`:
 | `ghcr.io/go-cryo/cryo-s3` | S3 backup worker |
 | `ghcr.io/go-cryo/cryo-pvc` | PVC backup worker |
 
+## Examples
+
+See the [`examples/`](examples/) directory for ready-to-use Kubernetes manifests covering repository hosts, repositories, and backup jobs for all three backup types (PSQL, S3, PVC). The [examples README](examples/README.md) includes a full end-to-end setup walkthrough.
+
 ## Configuration
 
 Cryo is configured via environment variables:

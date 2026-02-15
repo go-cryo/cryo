@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-local-host
+  namespace: cryo
+  labels:
+    go-cryo.github.com/repository-host: "true"
+type: Opaque
+stringData:
+  BASE_URL: "/backups"

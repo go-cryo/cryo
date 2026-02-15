@@ -7,6 +7,10 @@ push +COMMIT_MESSAGE:
   git pull origin main
   git push origin main
 
+tag +TAG_NAME:
+  git tag {{TAG_NAME}}
+  git push origin {{TAG_NAME}}
+
 # start the Go API with live reload
 air:
   air -c .air.toml

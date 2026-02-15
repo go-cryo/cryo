@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3-backup
+  namespace: cryo
+  labels:
+    go-cryo.github.com/config: "true"
+data:
+  config: |
+    type: s3
+    schedule: "0 3 * * *"
+    repositoryRef: "cryo/my-repo"
+    s3:
+      endpoint: s3.eu-central-1.amazonaws.com
+      bucket: my-application-uploads
+    retention:
+      keepLast: 7
+      keepDaily: 30
+      keepWeekly: 12
+      keepMonthly: 6
