@@ -97,13 +97,14 @@ jobs:
           fetch-depth: 0
       - name: Install gitleaks
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_$(curl -sSfL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r '.tag_name | ltrimstr("v")')_linux_x64.tar.gz | tar -xz -C /usr/local/bin gitleaks
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.0/gitleaks_8.30.0_linux_x64.tar.gz | tar -xz -C /usr/local/bin gitleaks
       - name: Run gitleaks
         run: gitleaks detect --source . --verbose
 
   release:
     name: Create release
-    permissions: write-all
+    permissions:
+      contents: write
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -125,7 +126,8 @@ jobs:
   build:
     needs: [test, e2e, gitleaks]
     runs-on: ${{ matrix.platform.runner }}
-    permissions: write-all
+    permissions:
+      packages: write
     strategy:
       matrix:
         image:
@@ -210,7 +212,8 @@ jobs:
     needs: [build]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    permissions: write-all
+    permissions:
+      packages: write
     strategy:
       matrix:
         include:
