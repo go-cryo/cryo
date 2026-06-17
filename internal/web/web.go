@@ -16,24 +16,17 @@ import (
 //go:embed all:html
 var webRoot embed.FS
 
-type WebHostingOptions struct {
-	DevMode       bool
-	StaticHosting bool
-	UIProxyUrl    string
-	Engine        *gin.Engine
-}
-
-func RegisterUI(options *WebHostingOptions) error {
-	if options.StaticHosting {
+func RegisterUI(engine *gin.Engine, devMode bool, staticHosting bool, uiProxyUrl string) error {
+	if staticHosting {
 		log.Info().Msg("Hosting embedded static files for UI")
-		if !options.DevMode {
+		if !devMode {
 			log.Info().Msg("Setting up cache control middleware")
-			options.Engine.Use(CacheControlMiddleware)
+			engine.Use(CacheControlMiddleware)
 		}
-		options.Engine.Use(GetEmbeddedFileHandler())
-	} else if options.UIProxyUrl != "" {
+		engine.Use(GetEmbeddedFileHandler())
+	} else if uiProxyUrl != "" {
 		log.Info().Msg("Setting up reverse proxy for UI")
-		options.Engine.Use(GetProxyHandler(options.UIProxyUrl))
+		engine.Use(GetProxyHandler(uiProxyUrl))
 	}
 	return nil
 }
@@ -63,8 +56,8 @@ func GetEmbeddedFileHandler() gin.HandlerFunc {
 	}
 
 	return gin.HandlerFunc(func(c *gin.Context) {
-		// Skip API, websocket, and health routes
-		if strings.HasPrefix(c.Request.URL.Path, "/api/") || strings.HasPrefix(c.Request.URL.Path, "/ws") {
+		// Skip API, websocket, and auth routes
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") || strings.HasPrefix(c.Request.URL.Path, "/ws") || strings.HasPrefix(c.Request.URL.Path, "/auth/") {
 			c.Next()
 			return
 		}
@@ -103,8 +96,8 @@ func GetProxyHandler(uiProxyUrl string) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
-		// Skip API, websocket, and health routes
-		if strings.HasPrefix(c.Request.URL.Path, "/api/") || strings.HasPrefix(c.Request.URL.Path, "/ws") {
+		// Skip API, websocket, and auth routes
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") || strings.HasPrefix(c.Request.URL.Path, "/ws") || strings.HasPrefix(c.Request.URL.Path, "/auth/") {
 			c.Next()
 			return
 		}

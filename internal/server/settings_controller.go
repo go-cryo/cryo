@@ -8,10 +8,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (s *Server) registerSettingsRoutes() {
-	base := s.Options.ApiBaseUrl + "/settings"
-	s.Engine.GET(base, s.getSettingsHandler())
-	s.Engine.PUT(base, s.updateSettingsHandler())
+func (s *Server) registerSettingsRoutes(router gin.IRouter) {
+	router.GET("/settings", s.getSettingsHandler())
+	router.PUT("/settings", s.updateSettingsHandler())
 }
 
 func (s *Server) getSettingsHandler() gin.HandlerFunc {

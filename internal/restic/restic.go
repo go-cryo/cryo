@@ -30,7 +30,7 @@ func (s *Service) Init(ctx context.Context, repo *repository.Repository) error {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic init failed: %s", stderr.String())
+		return fmt.Errorf("restic init failed: %w; stderr: %s", err, stderr.String())
 	}
 
 	return nil
@@ -47,7 +47,7 @@ func (s *Service) Check(ctx context.Context, repo *repository.Repository) (*Repo
 	if err := cmd.Run(); err != nil {
 		return &RepositoryStatus{
 			OK:      false,
-			Message: stderr.String(),
+			Message: fmt.Sprintf("%s; exec error: %s", stderr.String(), err.Error()),
 		}, nil
 	}
 
@@ -64,7 +64,7 @@ func (s *Service) ListSnapshots(ctx context.Context, repo *repository.Repository
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("restic snapshots failed: %s", stderr.String())
+		return nil, fmt.Errorf("restic snapshots failed: %w; stderr: %s", err, stderr.String())
 	}
 
 	var snapshots []*Snapshot
@@ -149,7 +149,7 @@ func (s *Service) ListSnapshotFiles(ctx context.Context, repo *repository.Reposi
 	}
 
 	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("restic ls failed: %s", stderr.String())
+		return nil, fmt.Errorf("restic ls failed: %w; stderr: %s", err, stderr.String())
 	}
 
 	return &SnapshotBrowseResponse{

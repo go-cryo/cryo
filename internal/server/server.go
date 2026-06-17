@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/go-cryo/cryo/internal/auth"
 	"github.com/go-cryo/cryo/internal/backupjob"
 	"github.com/go-cryo/cryo/internal/event"
 	"github.com/go-cryo/cryo/internal/executor"
@@ -37,6 +38,8 @@ type ServerOptions struct {
 	Scheduler          *scheduler.Scheduler
 	RunStore           *executor.RunStore
 	SettingsProvider   settings.Provider
+	BasicAuthHandler   *auth.BasicAuthHandler
+	OidcHandler        *auth.OIDCHandler
 }
 
 type Server struct {
@@ -50,6 +53,8 @@ type Server struct {
 	Scheduler          *scheduler.Scheduler
 	RunStore           *executor.RunStore
 	SettingsProvider   settings.Provider
+	BasicAuthHandler   *auth.BasicAuthHandler
+	OidcHandler        *auth.OIDCHandler
 }
 
 func NewServer(options *ServerOptions) (*Server, error) {
@@ -66,6 +71,8 @@ func NewServer(options *ServerOptions) (*Server, error) {
 		Scheduler:          options.Scheduler,
 		RunStore:           options.RunStore,
 		SettingsProvider:   options.SettingsProvider,
+		BasicAuthHandler:   options.BasicAuthHandler,
+		OidcHandler:        options.OidcHandler,
 	}
 
 	if !server.Options.DevMode {
@@ -87,7 +94,7 @@ func NewServer(options *ServerOptions) (*Server, error) {
 		log.Warn().Msg("CORS is enabled for all origins")
 		config := cors.DefaultConfig()
 		config.AllowHeaders = []string{"Authorization", "Content-Type", "X-Requested-With", "X-PINGOTHER", "X-File-Name", "Cache-Control"}
-		config.AllowOrigins = []string{"http://localhost:8080"}
+		config.AllowOrigins = []string{"http://localhost:8080", "http://localhost:9000"}
 		config.AllowCredentials = true
 		server.Engine.Use(cors.New(config))
 	}
@@ -96,35 +103,103 @@ func NewServer(options *ServerOptions) (*Server, error) {
 }
 
 func (s *Server) RegisterRoutes() error {
+	// Public routes — always accessible without auth
 	s.registerHealthRoute()
 	s.registerVersionRoute()
+	s.registerAuthInfoRoute()
+
+	// Apply combined auth middleware — protects /api/* routes only
+	s.Engine.Use(s.combinedAuth())
+
+	// Protected API routes
+	apiGroup := s.Engine.Group(s.Options.ApiBaseUrl)
+
+	// Session probe used by the SPA router guard. It sits behind combinedAuth,
+	// so it returns 200 for any valid session (BasicAuth or OIDC) and 401
+	// otherwise — unlike /auth/me, which only the BasicAuth handler serves.
+	s.registerAuthSessionRoute(apiGroup)
+
 	if s.HostProvider != nil {
-		s.registerHostRoutes()
+		s.registerHostRoutes(apiGroup)
 	}
 	if s.RepositoryProvider != nil {
-		s.registerRepositoryRoutes()
+		s.registerRepositoryRoutes(apiGroup)
 	}
 	if s.BackupJobProvider != nil {
-		s.registerBackupJobRoutes()
+		s.registerBackupJobRoutes(apiGroup)
 	}
 	if s.SettingsProvider != nil {
-		s.registerSettingsRoutes()
+		s.registerSettingsRoutes(apiGroup)
 	}
 
+	// WebSocket
 	event.RegisterWebsocketManager(&event.WebsocketOptions{
 		ApiBaseUrl: s.Options.ApiBaseUrl,
 		Engine:     s.Engine,
 	})
 
-	// must be the last route to be registered
-	web.RegisterUI(&web.WebHostingOptions{
-		DevMode:       s.Options.DevMode,
-		StaticHosting: s.Options.StaticHosting,
-		UIProxyUrl:    s.Options.UiProxyUrl,
-		Engine:        s.Engine,
-	})
+	// UI hosting — must be last (catch-all, no auth middleware)
+	web.RegisterUI(s.Engine, s.Options.DevMode, s.Options.StaticHosting, s.Options.UiProxyUrl)
 
 	return nil
+}
+
+// combinedAuth returns a middleware that protects /api/* routes by checking
+// BasicAuth and OIDC sessions in sequence. Non-API paths (UI) are always
+// allowed through so the SPA can load. Public API endpoints are whitelisted.
+func (s *Server) combinedAuth() gin.HandlerFunc {
+	oidcEnabled := s.OidcHandler != nil
+	basicAuthEnabled := s.BasicAuthHandler != nil
+
+	if !oidcEnabled && !basicAuthEnabled {
+		return func(c *gin.Context) { c.Next() }
+	}
+
+	publicPaths := []string{
+		s.Options.HealthEndpoint,
+		s.Options.ApiBaseUrl + s.Options.HealthEndpoint,
+		s.Options.ApiBaseUrl + "/version",
+		s.Options.ApiBaseUrl + "/auth/info",
+		s.Options.ApiBaseUrl + "/auth/login",
+		s.Options.ApiBaseUrl + "/auth/logout",
+		s.Options.ApiBaseUrl + "/auth/me",
+	}
+
+	apiPrefix := s.Options.ApiBaseUrl
+
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+
+		// Skip non-API paths — UI routes are not protected server-side. Use the
+		// configured API base so a custom API_BASE_URL is still guarded.
+		if path != apiPrefix && !strings.HasPrefix(path, apiPrefix+"/") {
+			c.Next()
+			return
+		}
+
+		// Public API endpoints that don't require authentication
+		for _, p := range publicPaths {
+			if path == p {
+				c.Next()
+				return
+			}
+		}
+
+		// 1. Try BasicAuth session
+		if basicAuthEnabled && s.BasicAuthHandler.CheckSession(c.Request) {
+			c.Next()
+			return
+		}
+
+		// 2. Try OIDC session
+		if oidcEnabled && s.OidcHandler.CheckSession(c.Request) {
+			c.Next()
+			return
+		}
+
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.Abort()
+	}
 }
 
 func (s *Server) Run() error {

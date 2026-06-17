@@ -291,10 +291,11 @@ func setupTestServer(t *testing.T) *testServer {
 	// side effects (goroutines, embedded FS) unsuitable for unit tests.
 	srv.registerHealthRoute()
 	srv.registerVersionRoute()
-	srv.registerHostRoutes()
-	srv.registerRepositoryRoutes()
-	srv.registerBackupJobRoutes()
-	srv.registerSettingsRoutes()
+	apiGroup := srv.Engine.Group("/api/v1")
+	srv.registerHostRoutes(apiGroup)
+	srv.registerRepositoryRoutes(apiGroup)
+	srv.registerBackupJobRoutes(apiGroup)
+	srv.registerSettingsRoutes(apiGroup)
 
 	return &testServer{
 		router:           srv.Engine,
@@ -387,7 +388,8 @@ func setupTestServerNoScheduler(t *testing.T) *testServer {
 		t.Fatalf("failed to create server: %v", err)
 	}
 
-	srv.registerBackupJobRoutes()
+	apiGroup2 := srv.Engine.Group("/api/v1")
+	srv.registerBackupJobRoutes(apiGroup2)
 
 	return &testServer{
 		router:           srv.Engine,

@@ -6,6 +6,7 @@ import {
   createWebHistory,
 } from 'vue-router';
 import routes from './routes';
+import authApi from 'src/api/auth';
 
 /*
  * If not building with SSR mode, you can
@@ -29,6 +30,34 @@ export default defineRouter(function (/* { store, ssrContext } */) {
     // quasar.conf.js -> build -> vueRouterMode
     // quasar.conf.js -> build -> publicPath
     history: createHistory(process.env.VUE_ROUTER_BASE),
+  });
+
+  let authChecked = false;
+  let authEnabled = false;
+
+  Router.beforeEach(async (to) => {
+    if (to.name === 'login') return true;
+
+    if (!authChecked) {
+      try {
+        const info = await authApi.getAuthInfo();
+        authEnabled = info.basicEnabled || info.oidcEnabled;
+        authChecked = true;
+      } catch {
+        return true;
+      }
+    }
+
+    if (!authEnabled) return true;
+
+    try {
+      // Method-agnostic probe so OIDC sessions are honoured too (not just
+      // BasicAuth, which is all /auth/me serves).
+      await authApi.session();
+      return true;
+    } catch {
+      return { name: 'login' };
+    }
   });
 
   return Router;

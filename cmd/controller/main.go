@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/go-cryo/cryo/internal/auth"
 	"github.com/go-cryo/cryo/internal/backupjob"
 	"github.com/go-cryo/cryo/internal/executor"
 	"github.com/go-cryo/cryo/internal/kubernetes"
@@ -137,6 +139,8 @@ func main() {
 		Scheduler:          sched,
 		RunStore:           runStore,
 		SettingsProvider:   settingsProvider,
+		KubernetesClient:   kubernetesClient,
+		Namespace:          namespace,
 	})
 
 	err = srv.Run()
@@ -153,15 +157,20 @@ type InitServerOptions struct {
 	Scheduler          *scheduler.Scheduler
 	RunStore           *executor.RunStore
 	SettingsProvider   settings.Provider
+	KubernetesClient   *kubernetes.Client
+	Namespace          string
 }
 
 func initServer(options *InitServerOptions) *server.Server {
+	devMode := config.Get().Bool("DEV")
+	apiBaseUrl := config.Get().String("API_BASE_URL")
+
 	srv, err := server.NewServer(&server.ServerOptions{
 		ServiceVersion:     version,
-		DevMode:            config.Get().Bool("DEV"),
+		DevMode:            devMode,
 		Port:               config.Get().Int("PORT"),
 		AccessLogs:         config.Get().StringArray("ACCESS_LOGS"),
-		ApiBaseUrl:         config.Get().String("API_BASE_URL"),
+		ApiBaseUrl:         apiBaseUrl,
 		HealthEndpoint:     config.Get().String("HEALTH_ENDPOINT"),
 		StaticHosting:      config.Get().Bool("STATIC_HOSTING"),
 		UiProxyUrl:         config.Get().String("UI_PROXY_URL"),
@@ -175,6 +184,54 @@ func initServer(options *InitServerOptions) *server.Server {
 	})
 	if err != nil {
 		log.Panic().Err(err).Msg("error initializing server")
+	}
+
+	// Initialize auth handlers and register routes on the engine
+	basicEnabled := config.Get().Bool("AUTH_BASIC_ENABLED")
+	oidcEnabled := config.Get().Bool("AUTH_OIDC_ENABLED")
+
+	if basicEnabled || oidcEnabled {
+		sessionKeys, err := auth.EnsureSessionKeys(
+			options.KubernetesClient.ClientSet,
+			options.Namespace,
+			config.Get().String("AUTH_SESSION_SECRET_NAME"),
+		)
+		if err != nil {
+			log.Panic().Err(err).Msg("error ensuring session keys")
+		}
+
+		if oidcEnabled {
+			scopes := strings.Split(config.Get().String("OIDC_SCOPES"), ",")
+			oidcHandler, err := auth.NewOIDCHandler(srv.Engine, &auth.OIDCHandlerOptions{
+				Issuer:       config.Get().String("OIDC_ISSUER"),
+				ClientID:     config.Get().String("OIDC_CLIENT_ID"),
+				ClientSecret: config.Get().String("OIDC_CLIENT_SECRET"),
+				RedirectURI:  config.Get().String("OIDC_REDIRECT_URI"),
+				Scopes:       scopes,
+				Role:         config.Get().String("OIDC_ROLE"),
+				RolePath:     config.Get().String("OIDC_ROLE_PATH"),
+				SessionKeys:  sessionKeys,
+				DevMode:      devMode,
+			})
+			if err != nil {
+				log.Panic().Err(err).Msg("error setting up OIDC auth")
+			}
+			srv.OidcHandler = oidcHandler
+		}
+
+		if basicEnabled {
+			basicAuthHandler, err := auth.NewBasicAuthHandler(srv.Engine, options.KubernetesClient.ClientSet, options.Namespace, &auth.BasicAuthHandlerOptions{
+				AdminUsername:    config.Get().String("AUTH_ADMIN_USERNAME"),
+				AdminSecretName: config.Get().String("AUTH_ADMIN_SECRET_NAME"),
+				SessionKeys:     sessionKeys,
+				DevMode:         devMode,
+				ApiBaseUrl:      apiBaseUrl,
+			})
+			if err != nil {
+				log.Panic().Err(err).Msg("error setting up basic auth")
+			}
+			srv.BasicAuthHandler = basicAuthHandler
+		}
 	}
 
 	err = srv.RegisterRoutes()

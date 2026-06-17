@@ -8,13 +8,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (s *Server) registerHostRoutes() {
-	base := s.Options.ApiBaseUrl + "/hosts"
-	s.Engine.GET(base, s.listHostsHandler())
-	s.Engine.GET(base+"/:namespace/:name", s.getHostHandler())
-	s.Engine.POST(base, s.createHostHandler())
-	s.Engine.PUT(base+"/:namespace/:name", s.updateHostHandler())
-	s.Engine.DELETE(base+"/:namespace/:name", s.deleteHostHandler())
+func (s *Server) registerHostRoutes(router gin.IRouter) {
+	router.GET("/hosts", s.listHostsHandler())
+	router.GET("/hosts/:namespace/:name", s.getHostHandler())
+	router.POST("/hosts", s.createHostHandler())
+	router.PUT("/hosts/:namespace/:name", s.updateHostHandler())
+	router.DELETE("/hosts/:namespace/:name", s.deleteHostHandler())
 }
 
 func (s *Server) createHostHandler() gin.HandlerFunc {

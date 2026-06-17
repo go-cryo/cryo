@@ -30,14 +30,16 @@ func RegisterWebsocketManager(options *WebsocketOptions) error {
 		lock:        sync.Mutex{},
 	}
 
-	options.Engine.GET(options.ApiBaseUrl+"/ws", func(c *gin.Context) {
+	wsHandler := func(c *gin.Context) {
 		websocketConnection, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			log.Error().Err(err).Msg("error upgrading websocket connection")
 			return
 		}
 		websocketManager.addConnection(websocketConnection)
-	})
+	}
+
+	options.Engine.GET(options.ApiBaseUrl+"/ws", wsHandler)
 
 	go func() {
 		websocketScheduler := gocron.NewScheduler()

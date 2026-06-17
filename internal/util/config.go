@@ -23,6 +23,26 @@ func InitConfig(version string) error {
 		config.String("PSQL_BACKUP_IMAGE").Default("ghcr.io/go-cryo/cryo-psql:" + version),
 		config.String("S3_BACKUP_IMAGE").Default("ghcr.io/go-cryo/cryo-s3:" + version),
 		config.String("PVC_BACKUP_IMAGE").Default("ghcr.io/go-cryo/cryo-pvc:" + version),
+
+		// Auth
+		config.Bool("AUTH_BASIC_ENABLED").Default(false),
+		config.Bool("AUTH_OIDC_ENABLED").Default(false),
+
+		// BasicAuth
+		config.String("AUTH_ADMIN_USERNAME").Default("admin"),
+		config.String("AUTH_ADMIN_SECRET_NAME").Default("cryo-admin-credentials"),
+
+		// OIDC
+		config.String("OIDC_ISSUER").Default(""),
+		config.String("OIDC_CLIENT_ID").Default(""),
+		config.String("OIDC_CLIENT_SECRET").Default(""),
+		config.String("OIDC_REDIRECT_URI").Default(""),
+		config.String("OIDC_SCOPES").Default("openid,profile,email"),
+		config.String("OIDC_ROLE").Default(""),
+		config.String("OIDC_ROLE_PATH").Default("realm_access.roles"),
+
+		// Session keys (shared by both auth methods)
+		config.String("AUTH_SESSION_SECRET_NAME").Default("cryo-session-keys"),
 	})
 	return err
 }

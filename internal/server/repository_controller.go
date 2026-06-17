@@ -8,16 +8,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (s *Server) registerRepositoryRoutes() {
-	base := s.Options.ApiBaseUrl + "/repositories"
-	s.Engine.GET(base, s.listRepositoriesHandler())
-	s.Engine.GET(base+"/:namespace/:name", s.getRepositoryHandler())
-	s.Engine.GET(base+"/:namespace/:name/check", s.checkRepositoryHandler())
-	s.Engine.GET(base+"/:namespace/:name/snapshots", s.listSnapshotsHandler())
-	s.Engine.GET(base+"/:namespace/:name/snapshots/:snapshotId/browse", s.browseSnapshotHandler())
-	s.Engine.POST(base, s.createRepositoryHandler())
-	s.Engine.PUT(base+"/:namespace/:name", s.updateRepositoryHandler())
-	s.Engine.DELETE(base+"/:namespace/:name", s.deleteRepositoryHandler())
+func (s *Server) registerRepositoryRoutes(router gin.IRouter) {
+	router.GET("/repositories", s.listRepositoriesHandler())
+	router.GET("/repositories/:namespace/:name", s.getRepositoryHandler())
+	router.GET("/repositories/:namespace/:name/check", s.checkRepositoryHandler())
+	router.GET("/repositories/:namespace/:name/snapshots", s.listSnapshotsHandler())
+	router.GET("/repositories/:namespace/:name/snapshots/:snapshotId/browse", s.browseSnapshotHandler())
+	router.POST("/repositories", s.createRepositoryHandler())
+	router.PUT("/repositories/:namespace/:name", s.updateRepositoryHandler())
+	router.DELETE("/repositories/:namespace/:name", s.deleteRepositoryHandler())
 }
 
 func (s *Server) createRepositoryHandler() gin.HandlerFunc {

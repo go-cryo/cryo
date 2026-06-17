@@ -8,15 +8,14 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (s *Server) registerBackupJobRoutes() {
-	base := s.Options.ApiBaseUrl + "/backupjobs"
-	s.Engine.GET(base, s.listBackupJobsHandler())
-	s.Engine.GET(base+"/:namespace/:name", s.getBackupJobHandler())
-	s.Engine.POST(base, s.createBackupJobHandler())
-	s.Engine.PUT(base+"/:namespace/:name", s.updateBackupJobHandler())
-	s.Engine.DELETE(base+"/:namespace/:name", s.deleteBackupJobHandler())
-	s.Engine.POST(base+"/:namespace/:name/trigger", s.triggerBackupJobHandler())
-	s.Engine.GET(base+"/:namespace/:name/runs", s.listBackupRunsHandler())
+func (s *Server) registerBackupJobRoutes(router gin.IRouter) {
+	router.GET("/backupjobs", s.listBackupJobsHandler())
+	router.GET("/backupjobs/:namespace/:name", s.getBackupJobHandler())
+	router.POST("/backupjobs", s.createBackupJobHandler())
+	router.PUT("/backupjobs/:namespace/:name", s.updateBackupJobHandler())
+	router.DELETE("/backupjobs/:namespace/:name", s.deleteBackupJobHandler())
+	router.POST("/backupjobs/:namespace/:name/trigger", s.triggerBackupJobHandler())
+	router.GET("/backupjobs/:namespace/:name/runs", s.listBackupRunsHandler())
 }
 
 func (s *Server) listBackupJobsHandler() gin.HandlerFunc {

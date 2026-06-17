@@ -107,9 +107,12 @@
           </q-avatar>
         </q-item-section>
         <q-item-section>
-          <q-item-label class="text-weight-medium">User</q-item-label>
+          <q-item-label class="text-weight-medium">{{ currentUser || 'User' }}</q-item-label>
         </q-item-section>
-        <q-item-section side>
+        <q-item-section side v-if="authEnabled">
+          <q-btn flat round dense icon="logout" color="grey" @click="onLogout" />
+        </q-item-section>
+        <q-item-section side v-else>
           <q-icon name="more_vert" color="grey" />
         </q-item-section>
       </q-item>
@@ -124,8 +127,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import versionApi from 'src/api/version';
+import authApi from 'src/api/auth';
 
 const version = ref('');
+const currentUser = ref('');
+const authEnabled = ref(false);
+
 const displayVersion = computed(() => {
   if (!version.value) return '';
   if (/^\d/.test(version.value)) return `v${version.value}`;
@@ -139,7 +146,27 @@ onMounted(async () => {
   } catch (e) {
     console.error('Failed to fetch version:', e);
   }
+
+  try {
+    const info = await authApi.getAuthInfo();
+    authEnabled.value = info.basicEnabled || info.oidcEnabled;
+    if (authEnabled.value) {
+      const user = await authApi.me();
+      currentUser.value = user.username;
+    }
+  } catch {
+    // auth not configured or not logged in
+  }
 });
+
+async function onLogout() {
+  try {
+    await authApi.logout();
+  } catch {
+    // ignore
+  }
+  window.location.href = '/login';
+}
 </script>
 
 <style lang="scss" scoped>
