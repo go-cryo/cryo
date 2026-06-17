@@ -49,7 +49,7 @@ jobs:
 
       # KIND cluster with registry access
       - name: Create KIND cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@v1.13.0 # pinned: v1.14.0 (kind 0.31/k8s 1.35) kubelet fails to boot on ubuntu-latest
         with:
           cluster_name: cryo-e2e
           config: test/e2e/kind-config.yaml
@@ -101,7 +101,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
 
       - name: Create KIND cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@v1.13.0 # pinned: v1.14.0 (kind 0.31/k8s 1.35) kubelet fails to boot on ubuntu-latest
         with:
           cluster_name: cryo-test
           config: test/e2e/kind-config.yaml
