@@ -6,12 +6,14 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/go-cryo/cryo/internal/auth"
 	"github.com/go-cryo/cryo/internal/backupjob"
 	"github.com/go-cryo/cryo/internal/executor"
 	"github.com/go-cryo/cryo/internal/repository"
@@ -26,6 +28,12 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+const (
+	adminSecretName   = "cryo-admin-credentials"
+	sessionSecretName = "cryo-session-keys"
+	adminUsername     = "admin"
+)
+
 var (
 	testNamespace  string
 	clientSet      kubernetes.Interface
@@ -38,6 +46,9 @@ var (
 	sched          *scheduler.Scheduler
 	serverURL      string
 	testHTTPServer *httptest.Server
+	// authClient carries the admin session cookie. The e2e suite runs with
+	// BasicAuth enabled, so every protected API call goes through it.
+	authClient *http.Client
 )
 
 func TestMain(m *testing.M) {
@@ -77,7 +88,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// Deploy test infrastructure (MinIO, PostgreSQL, test PVC)
+	// Deploy test infrastructure (RustFS, PostgreSQL, test PVC)
 	if err := deployTestInfrastructure(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to deploy test infrastructure: %v\n", err)
 		clientSet.CoreV1().Namespaces().Delete(ctx, testNamespace, metav1.DeleteOptions{})
@@ -89,10 +100,6 @@ func TestMain(m *testing.M) {
 	repoProvider = repository.NewKubernetesProvider(cs, testNamespace, hostProvider)
 	bjProvider = backupjob.NewKubernetesProvider(cs, testNamespace)
 	settProvider = settings.NewKubernetesProvider(cs, testNamespace)
-
-	// No custom storage class needed: PVCs bind via pod scheduling
-	// (WaitForFirstConsumer) and the executor no longer waits for PVC
-	// binding before creating the job.
 
 	// Get backup images from env (set by CI or developer)
 	psqlImage := envOrDefault("CRYO_PSQL_IMAGE", "localhost:5001/cryo-psql:test")
@@ -125,18 +132,41 @@ func TestMain(m *testing.M) {
 		BackupJobProvider:  bjProvider,
 		Scheduler:          sched,
 		RunStore:           runStore,
-		SettingsProvider:    settProvider,
+		SettingsProvider:   settProvider,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create server: %v\n", err)
-		sched.Stop()
-		clientSet.CoreV1().Namespaces().Delete(ctx, testNamespace, metav1.DeleteOptions{})
-		os.Exit(1)
+		fatal(ctx, "Failed to create server: %v\n", err)
 	}
+
+	// Enable BasicAuth so the suite exercises the auth-protected API surface
+	// exactly as production does. DevMode=true on the handler keeps the session
+	// cookie non-Secure so it survives the plain-HTTP httptest server.
+	sessionKeys, err := auth.EnsureSessionKeys(cs, testNamespace, sessionSecretName)
+	if err != nil {
+		fatal(ctx, "Failed to ensure session keys: %v\n", err)
+	}
+	basicAuthHandler, err := auth.NewBasicAuthHandler(srv.Engine, cs, testNamespace, &auth.BasicAuthHandlerOptions{
+		AdminUsername:   adminUsername,
+		AdminSecretName: adminSecretName,
+		SessionKeys:     sessionKeys,
+		DevMode:         true,
+		ApiBaseUrl:      "/api/v1",
+	})
+	if err != nil {
+		fatal(ctx, "Failed to set up basic auth: %v\n", err)
+	}
+	srv.BasicAuthHandler = basicAuthHandler
+
 	srv.RegisterRoutes()
 
 	testHTTPServer = httptest.NewServer(srv.Engine)
 	serverURL = testHTTPServer.URL
+
+	// Log in as the bootstrapped admin and reuse the session for all tests.
+	authClient, err = loginAdmin(ctx)
+	if err != nil {
+		fatal(ctx, "Failed to log in admin: %v\n", err)
+	}
 
 	code := m.Run()
 
@@ -147,14 +177,24 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// deployTestInfrastructure deploys MinIO, PostgreSQL, and a test PVC into the
+// fatal tears down the test namespace and exits non-zero.
+func fatal(ctx context.Context, format string, args ...any) {
+	fmt.Fprintf(os.Stderr, format, args...)
+	if sched != nil {
+		sched.Stop()
+	}
+	clientSet.CoreV1().Namespaces().Delete(ctx, testNamespace, metav1.DeleteOptions{})
+	os.Exit(1)
+}
+
+// deployTestInfrastructure deploys RustFS, PostgreSQL, and a test PVC into the
 // test namespace, waits for them to be ready, and seeds them with test data.
 func deployTestInfrastructure(ctx context.Context) error {
 	mDir := filepath.Join("manifests")
 
 	// Apply manifests
-	if err := applyManifest(ctx, filepath.Join(mDir, "minio.yaml")); err != nil {
-		return fmt.Errorf("deploying minio: %w", err)
+	if err := applyManifest(ctx, filepath.Join(mDir, "rustfs.yaml")); err != nil {
+		return fmt.Errorf("deploying rustfs: %w", err)
 	}
 	if err := applyManifest(ctx, filepath.Join(mDir, "postgres.yaml")); err != nil {
 		return fmt.Errorf("deploying postgres: %w", err)
@@ -164,19 +204,19 @@ func deployTestInfrastructure(ctx context.Context) error {
 	}
 
 	// Wait for deployments to be ready
-	fmt.Println("Waiting for MinIO deployment...")
-	if err := waitForDeploymentReady(ctx, "minio", 3*time.Minute); err != nil {
-		return fmt.Errorf("waiting for minio: %w", err)
+	fmt.Println("Waiting for RustFS deployment...")
+	if err := waitForDeploymentReady(ctx, "rustfs", 3*time.Minute); err != nil {
+		return fmt.Errorf("waiting for rustfs: %w", err)
 	}
 	fmt.Println("Waiting for PostgreSQL deployment...")
 	if err := waitForDeploymentReady(ctx, "postgres", 3*time.Minute); err != nil {
 		return fmt.Errorf("waiting for postgres: %w", err)
 	}
 
-	// Seed MinIO: create buckets and upload test data
-	fmt.Println("Seeding MinIO buckets...")
-	if err := seedMinIO(ctx); err != nil {
-		return fmt.Errorf("seeding minio: %w", err)
+	// Seed RustFS: create buckets and upload test data
+	fmt.Println("Seeding RustFS buckets...")
+	if err := seedRustFS(ctx); err != nil {
+		return fmt.Errorf("seeding rustfs: %w", err)
 	}
 
 	// Seed PostgreSQL: create test table and data
@@ -194,4 +234,3 @@ func deployTestInfrastructure(ctx context.Context) error {
 	fmt.Println("Test infrastructure ready")
 	return nil
 }
-

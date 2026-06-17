@@ -45,7 +45,7 @@ func TestE2E_BackupExecution_PSQL(t *testing.T) {
 		},
 	}
 	body, _ := json.Marshal(jobReq)
-	resp, err := http.Post(serverURL+"/api/v1/backupjobs", "application/json", bytes.NewReader(body))
+	resp, err := authClient.Post(serverURL+"/api/v1/backupjobs", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("creating backup job: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestE2E_BackupExecution_PSQL(t *testing.T) {
 
 	// Trigger backup
 	triggerURL := fmt.Sprintf("%s/api/v1/backupjobs/%s/%s/trigger", serverURL, testNamespace, jobName)
-	resp, err = http.Post(triggerURL, "", nil)
+	resp, err = authClient.Post(triggerURL, "", nil)
 	if err != nil {
 		t.Fatalf("triggering backup: %v", err)
 	}
@@ -94,14 +94,14 @@ func TestE2E_BackupExecution_S3(t *testing.T) {
 		Schedule:      "0 0 1 1 *",
 		RepositoryRef: testNamespace + "/" + repoName,
 		S3: &backupjob.S3Config{
-			Endpoint:  "http://minio:9000",
+			Endpoint:  "http://rustfs:9000",
 			Bucket:    "test-source",
-			AccessKey: "minioadmin",
-			SecretKey: "minioadmin",
+			AccessKey: "rustfsadmin",
+			SecretKey: "rustfsadmin",
 		},
 	}
 	body, _ := json.Marshal(jobReq)
-	resp, err := http.Post(serverURL+"/api/v1/backupjobs", "application/json", bytes.NewReader(body))
+	resp, err := authClient.Post(serverURL+"/api/v1/backupjobs", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("creating backup job: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestE2E_BackupExecution_S3(t *testing.T) {
 
 	// Trigger backup
 	triggerURL := fmt.Sprintf("%s/api/v1/backupjobs/%s/%s/trigger", serverURL, testNamespace, jobName)
-	resp, err = http.Post(triggerURL, "", nil)
+	resp, err = authClient.Post(triggerURL, "", nil)
 	if err != nil {
 		t.Fatalf("triggering backup: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestE2E_BackupExecution_PVC(t *testing.T) {
 		},
 	}
 	body, _ := json.Marshal(jobReq)
-	resp, err := http.Post(serverURL+"/api/v1/backupjobs", "application/json", bytes.NewReader(body))
+	resp, err := authClient.Post(serverURL+"/api/v1/backupjobs", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("creating backup job: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestE2E_BackupExecution_PVC(t *testing.T) {
 
 	// Trigger backup
 	triggerURL := fmt.Sprintf("%s/api/v1/backupjobs/%s/%s/trigger", serverURL, testNamespace, jobName)
-	resp, err = http.Post(triggerURL, "", nil)
+	resp, err = authClient.Post(triggerURL, "", nil)
 	if err != nil {
 		t.Fatalf("triggering backup: %v", err)
 	}
@@ -190,12 +190,12 @@ func createHost(t testing.TB, name string) {
 	hostReq := repositoryhost.CreateHostRequest{
 		Name:               name,
 		Namespace:          testNamespace,
-		BaseURL:            "s3:http://minio:9000/cryo-repo",
-		AwsAccessKeyID:     "minioadmin",
-		AwsSecretAccessKey: "minioadmin",
+		BaseURL:            "s3:http://rustfs:9000/cryo-repo",
+		AwsAccessKeyID:     "rustfsadmin",
+		AwsSecretAccessKey: "rustfsadmin",
 	}
 	body, _ := json.Marshal(hostReq)
-	resp, err := http.Post(serverURL+"/api/v1/hosts", "application/json", bytes.NewReader(body))
+	resp, err := authClient.Post(serverURL+"/api/v1/hosts", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("creating host %s: %v", name, err)
 	}
@@ -217,7 +217,7 @@ func createRepo(t testing.TB, name, hostName, path string) {
 		ResticPassword: "e2e-test-password",
 	}
 	body, _ := json.Marshal(repoReq)
-	resp, err := http.Post(serverURL+"/api/v1/repositories", "application/json", bytes.NewReader(body))
+	resp, err := authClient.Post(serverURL+"/api/v1/repositories", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("creating repository %s: %v", name, err)
 	}

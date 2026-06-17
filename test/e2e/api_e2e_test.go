@@ -19,7 +19,7 @@ import (
 
 func TestE2E_HealthAndVersion(t *testing.T) {
 	t.Run("health returns 200", func(t *testing.T) {
-		resp, err := http.Get(serverURL + "/api/v1/health")
+		resp, err := authClient.Get(serverURL + "/api/v1/health")
 		if err != nil {
 			t.Fatalf("GET /health failed: %v", err)
 		}
@@ -35,7 +35,7 @@ func TestE2E_HealthAndVersion(t *testing.T) {
 	})
 
 	t.Run("version returns 200", func(t *testing.T) {
-		resp, err := http.Get(serverURL + "/api/v1/version")
+		resp, err := authClient.Get(serverURL + "/api/v1/version")
 		if err != nil {
 			t.Fatalf("GET /version failed: %v", err)
 		}
@@ -61,7 +61,7 @@ func TestE2E_HostCRUD(t *testing.T) {
 		BaseURL:   "s3:https://s3.example.com/bucket",
 	}
 	body, _ := json.Marshal(createReq)
-	resp, err := http.Post(serverURL+"/api/v1/hosts", "application/json", bytes.NewReader(body))
+	resp, err := authClient.Post(serverURL+"/api/v1/hosts", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /hosts failed: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestE2E_HostCRUD(t *testing.T) {
 	}
 
 	// List
-	resp, err = http.Get(serverURL + "/api/v1/hosts")
+	resp, err = authClient.Get(serverURL + "/api/v1/hosts")
 	if err != nil {
 		t.Fatalf("GET /hosts failed: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestE2E_HostCRUD(t *testing.T) {
 	}
 
 	// Get
-	resp, err = http.Get(fmt.Sprintf("%s/api/v1/hosts/%s/%s", serverURL, testNamespace, hostName))
+	resp, err = authClient.Get(fmt.Sprintf("%s/api/v1/hosts/%s/%s", serverURL, testNamespace, hostName))
 	if err != nil {
 		t.Fatalf("GET /hosts/:ns/:name failed: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestE2E_HostCRUD(t *testing.T) {
 	body, _ = json.Marshal(updateReq)
 	req, _ := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/api/v1/hosts/%s/%s", serverURL, testNamespace, hostName), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("PUT /hosts/:ns/:name failed: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestE2E_HostCRUD(t *testing.T) {
 
 	// Delete
 	req, _ = http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v1/hosts/%s/%s", serverURL, testNamespace, hostName), nil)
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("DELETE /hosts/:ns/:name failed: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestE2E_HostCRUD(t *testing.T) {
 	}
 
 	// Verify deleted
-	resp, err = http.Get(fmt.Sprintf("%s/api/v1/hosts/%s/%s", serverURL, testNamespace, hostName))
+	resp, err = authClient.Get(fmt.Sprintf("%s/api/v1/hosts/%s/%s", serverURL, testNamespace, hostName))
 	if err != nil {
 		t.Fatalf("GET after delete failed: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestE2E_RepositoryCRUD(t *testing.T) {
 		BaseURL:   "s3:https://s3.example.com/bucket",
 	}
 	body, _ := json.Marshal(createHost)
-	resp, err := http.Post(serverURL+"/api/v1/hosts", "application/json", bytes.NewReader(body))
+	resp, err := authClient.Post(serverURL+"/api/v1/hosts", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /hosts failed: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestE2E_RepositoryCRUD(t *testing.T) {
 		ResticPassword: "test-password",
 	}
 	body, _ = json.Marshal(createRepo)
-	resp, err = http.Post(serverURL+"/api/v1/repositories", "application/json", bytes.NewReader(body))
+	resp, err = authClient.Post(serverURL+"/api/v1/repositories", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /repositories failed: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestE2E_RepositoryCRUD(t *testing.T) {
 	}
 
 	// Get
-	resp, err = http.Get(fmt.Sprintf("%s/api/v1/repositories/%s/%s", serverURL, testNamespace, repoName))
+	resp, err = authClient.Get(fmt.Sprintf("%s/api/v1/repositories/%s/%s", serverURL, testNamespace, repoName))
 	if err != nil {
 		t.Fatalf("GET /repositories/:ns/:name failed: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestE2E_RepositoryCRUD(t *testing.T) {
 	}
 
 	// List
-	resp, err = http.Get(serverURL + "/api/v1/repositories")
+	resp, err = authClient.Get(serverURL + "/api/v1/repositories")
 	if err != nil {
 		t.Fatalf("GET /repositories failed: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestE2E_RepositoryCRUD(t *testing.T) {
 	body, _ = json.Marshal(updateRepo)
 	req, _ := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/api/v1/repositories/%s/%s", serverURL, testNamespace, repoName), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("PUT /repositories/:ns/:name failed: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestE2E_RepositoryCRUD(t *testing.T) {
 
 	// Delete repository
 	req, _ = http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v1/repositories/%s/%s", serverURL, testNamespace, repoName), nil)
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("DELETE /repositories/:ns/:name failed: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestE2E_RepositoryCRUD(t *testing.T) {
 
 	// Clean up host
 	req, _ = http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v1/hosts/%s/%s", serverURL, testNamespace, hostName), nil)
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("DELETE host cleanup failed: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestE2E_BackupJobCRUD(t *testing.T) {
 		BaseURL:   "s3:https://s3.example.com/bucket",
 	}
 	body, _ := json.Marshal(createHost)
-	resp, err := http.Post(serverURL+"/api/v1/hosts", "application/json", bytes.NewReader(body))
+	resp, err := authClient.Post(serverURL+"/api/v1/hosts", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /hosts failed: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestE2E_BackupJobCRUD(t *testing.T) {
 		ResticPassword: "test-password",
 	}
 	body, _ = json.Marshal(createRepo)
-	resp, err = http.Post(serverURL+"/api/v1/repositories", "application/json", bytes.NewReader(body))
+	resp, err = authClient.Post(serverURL+"/api/v1/repositories", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /repositories failed: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestE2E_BackupJobCRUD(t *testing.T) {
 		},
 	}
 	body, _ = json.Marshal(createJob)
-	resp, err = http.Post(serverURL+"/api/v1/backupjobs", "application/json", bytes.NewReader(body))
+	resp, err = authClient.Post(serverURL+"/api/v1/backupjobs", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /backupjobs failed: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestE2E_BackupJobCRUD(t *testing.T) {
 	}
 
 	// List
-	resp, err = http.Get(serverURL + "/api/v1/backupjobs")
+	resp, err = authClient.Get(serverURL + "/api/v1/backupjobs")
 	if err != nil {
 		t.Fatalf("GET /backupjobs failed: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestE2E_BackupJobCRUD(t *testing.T) {
 	}
 
 	// Get
-	resp, err = http.Get(fmt.Sprintf("%s/api/v1/backupjobs/%s/%s", serverURL, testNamespace, jobName))
+	resp, err = authClient.Get(fmt.Sprintf("%s/api/v1/backupjobs/%s/%s", serverURL, testNamespace, jobName))
 	if err != nil {
 		t.Fatalf("GET /backupjobs/:ns/:name failed: %v", err)
 	}
@@ -400,7 +400,7 @@ func TestE2E_BackupJobCRUD(t *testing.T) {
 	body, _ = json.Marshal(updateJob)
 	req, _ := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/api/v1/backupjobs/%s/%s", serverURL, testNamespace, jobName), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("PUT /backupjobs/:ns/:name failed: %v", err)
 	}
@@ -417,7 +417,7 @@ func TestE2E_BackupJobCRUD(t *testing.T) {
 
 	// Delete
 	req, _ = http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v1/backupjobs/%s/%s", serverURL, testNamespace, jobName), nil)
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("DELETE /backupjobs/:ns/:name failed: %v", err)
 	}
@@ -428,9 +428,9 @@ func TestE2E_BackupJobCRUD(t *testing.T) {
 
 	// Clean up
 	req, _ = http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v1/repositories/%s/%s", serverURL, testNamespace, repoName), nil)
-	http.DefaultClient.Do(req)
+	authClient.Do(req)
 	req, _ = http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v1/hosts/%s/%s", serverURL, testNamespace, hostName), nil)
-	http.DefaultClient.Do(req)
+	authClient.Do(req)
 }
 
 func TestE2E_HostDeleteBlocked(t *testing.T) {
@@ -444,7 +444,7 @@ func TestE2E_HostDeleteBlocked(t *testing.T) {
 		BaseURL:   "s3:https://s3.example.com/bucket",
 	}
 	body, _ := json.Marshal(createHost)
-	resp, err := http.Post(serverURL+"/api/v1/hosts", "application/json", bytes.NewReader(body))
+	resp, err := authClient.Post(serverURL+"/api/v1/hosts", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /hosts failed: %v", err)
 	}
@@ -459,7 +459,7 @@ func TestE2E_HostDeleteBlocked(t *testing.T) {
 		ResticPassword: "test-password",
 	}
 	body, _ = json.Marshal(createRepo)
-	resp, err = http.Post(serverURL+"/api/v1/repositories", "application/json", bytes.NewReader(body))
+	resp, err = authClient.Post(serverURL+"/api/v1/repositories", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /repositories failed: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestE2E_HostDeleteBlocked(t *testing.T) {
 
 	// Try to delete host - should get 409 Conflict
 	req, _ := http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v1/hosts/%s/%s", serverURL, testNamespace, hostName), nil)
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("DELETE /hosts/:ns/:name failed: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestE2E_HostDeleteBlocked(t *testing.T) {
 
 	// Delete repo first
 	req, _ = http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v1/repositories/%s/%s", serverURL, testNamespace, repoName), nil)
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("DELETE /repositories/:ns/:name failed: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestE2E_HostDeleteBlocked(t *testing.T) {
 
 	// Now delete host should succeed
 	req, _ = http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v1/hosts/%s/%s", serverURL, testNamespace, hostName), nil)
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("DELETE /hosts/:ns/:name after repo deletion failed: %v", err)
 	}
@@ -506,7 +506,7 @@ func TestE2E_HostDeleteBlocked(t *testing.T) {
 
 func TestE2E_SettingsCRUD(t *testing.T) {
 	// Get current settings so we can restore them after the test
-	resp, err := http.Get(serverURL + "/api/v1/settings")
+	resp, err := authClient.Get(serverURL + "/api/v1/settings")
 	if err != nil {
 		t.Fatalf("GET /settings failed: %v", err)
 	}
@@ -529,7 +529,7 @@ func TestE2E_SettingsCRUD(t *testing.T) {
 		body, _ := json.Marshal(restoreReq)
 		req, _ := http.NewRequest(http.MethodPut, serverURL+"/api/v1/settings", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		http.DefaultClient.Do(req)
+		authClient.Do(req)
 	})
 
 	if original.JobTTLSeconds != 604800 {
@@ -546,7 +546,7 @@ func TestE2E_SettingsCRUD(t *testing.T) {
 	body, _ := json.Marshal(updateReq)
 	req, _ := http.NewRequest(http.MethodPut, serverURL+"/api/v1/settings", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authClient.Do(req)
 	if err != nil {
 		t.Fatalf("PUT /settings failed: %v", err)
 	}
@@ -565,7 +565,7 @@ func TestE2E_SettingsCRUD(t *testing.T) {
 	}
 
 	// Verify by re-reading
-	resp, err = http.Get(serverURL + "/api/v1/settings")
+	resp, err = authClient.Get(serverURL + "/api/v1/settings")
 	if err != nil {
 		t.Fatalf("GET /settings after update failed: %v", err)
 	}

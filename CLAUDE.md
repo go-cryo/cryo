@@ -38,10 +38,25 @@ docker build -f docker/pvc.Dockerfile .           # Build PVC backup image (Alpi
 
 ### Development Workflow
 
-1. `just start` to create local KIND cluster with snapshot support
+1. `just cluster-up` to create the local KIND cluster (registry + CSI + backup images)
 2. Terminal 1: `go run ./cmd/controller` (with `DEV=true` in `.env`)
-3. Terminal 2: `cd ui && npm run dev`
+3. Terminal 2: `cd ui && bun run dev`
 4. UI at http://localhost:8080 (Go server proxies to Quasar dev server)
+
+### Testing
+
+Three layers, all driven from the `justfile` — see `test/README.md` for details.
+
+```bash
+just test        # unit tests (fake k8s clients, no cluster)
+just test-e2e    # Go e2e: real psql/s3/pvc backups vs RustFS, auth-protected API
+just test-ui     # Playwright: full backup lifecycle through the browser
+```
+
+Go e2e and Playwright both need `just cluster-up` first. The S3 backup target is
+**RustFS** (in-cluster), and **BasicAuth is enabled** for every test run. The
+Playwright suite deploys the controller in-cluster (`cryo-ui` namespace) so
+restic-backed snapshot browsing works natively.
 
 ## Architecture
 

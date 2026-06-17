@@ -3,10 +3,13 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"os/exec"
 	"testing"
@@ -95,12 +98,14 @@ func waitForJobComplete(ctx context.Context, name string, timeout time.Duration)
 	}
 }
 
-// seedMinIO creates MinIO buckets needed for testing.
-func seedMinIO(ctx context.Context) error {
-	var backoffLimit int32 = 0
+// seedRustFS creates the buckets needed for testing (restic repository backend
+// + S3 backup source) and uploads test data. The MinIO client (mc) speaks plain
+// S3 and works against RustFS unchanged.
+func seedRustFS(ctx context.Context) error {
+	var backoffLimit int32 = 2
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "minio-setup",
+			Name:      "rustfs-setup",
 			Namespace: testNamespace,
 		},
 		Spec: batchv1.JobSpec{
@@ -110,15 +115,15 @@ func seedMinIO(ctx context.Context) error {
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{
 						{
-							Name:  "setup",
-							Image: "minio/mc:latest",
+							Name:    "setup",
+							Image:   "minio/mc:latest",
 							Command: []string{"/bin/sh", "-c"},
 							Args: []string{
-								"mc alias set myminio http://minio:9000 minioadmin minioadmin && " +
-									"mc mb myminio/cryo-repo && " +
-									"mc mb myminio/test-source && " +
+								"until mc alias set rfs http://rustfs:9000 rustfsadmin rustfsadmin; do echo waiting for rustfs; sleep 2; done && " +
+									"mc mb --ignore-existing rfs/cryo-repo && " +
+									"mc mb --ignore-existing rfs/test-source && " +
 									"echo 'test data for s3 backup' > /tmp/test-file.txt && " +
-									"mc cp /tmp/test-file.txt myminio/test-source/test-file.txt",
+									"mc cp /tmp/test-file.txt rfs/test-source/test-file.txt",
 							},
 						},
 					},
@@ -129,9 +134,9 @@ func seedMinIO(ctx context.Context) error {
 
 	_, err := clientSet.BatchV1().Jobs(testNamespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("creating minio setup job: %w", err)
+		return fmt.Errorf("creating rustfs setup job: %w", err)
 	}
-	return waitForJobComplete(ctx, "minio-setup", 3*time.Minute)
+	return waitForJobComplete(ctx, "rustfs-setup", 3*time.Minute)
 }
 
 // seedPostgres creates test tables and data in PostgreSQL.
@@ -239,7 +244,7 @@ func waitForBackupRunSucceeded(t testing.TB, namespace, name string, timeout tim
 		}
 
 		runsURL := fmt.Sprintf("%s/api/v1/backupjobs/%s/%s/runs", serverURL, namespace, name)
-		resp, err := http.Get(runsURL)
+		resp, err := authClient.Get(runsURL)
 		if err != nil {
 			<-ticker.C
 			continue
@@ -267,7 +272,39 @@ func deleteResource(t testing.TB, resource, namespace, name string) {
 	t.Helper()
 	url := fmt.Sprintf("%s/api/v1/%s/%s/%s", serverURL, resource, namespace, name)
 	req, _ := http.NewRequest(http.MethodDelete, url, nil)
-	http.DefaultClient.Do(req)
+	authClient.Do(req)
+}
+
+// loginAdmin reads the bootstrapped admin credentials from the Kubernetes secret
+// and logs in, returning an http.Client whose cookie jar carries the session.
+func loginAdmin(ctx context.Context) (*http.Client, error) {
+	secret, err := clientSet.CoreV1().Secrets(testNamespace).Get(ctx, adminSecretName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("getting admin secret %q: %w", adminSecretName, err)
+	}
+	username := string(secret.Data["USERNAME"])
+	password := string(secret.Data["PASSWORD"])
+	if username == "" || password == "" {
+		return nil, fmt.Errorf("admin secret %q missing USERNAME/PASSWORD", adminSecretName)
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating cookie jar: %w", err)
+	}
+	client := &http.Client{Jar: jar}
+
+	body, _ := json.Marshal(map[string]string{"identifier": username, "password": password})
+	resp, err := client.Post(serverURL+"/api/v1/auth/login", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("posting login: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("login failed: status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return client, nil
 }
 
 // envOrDefault returns the value of the named environment variable or the default value.

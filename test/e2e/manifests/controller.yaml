@@ -1,0 +1,118 @@
+# In-cluster controller for the Playwright UI e2e loop. Runs the real controller
+# image (UI embedded + restic) with BasicAuth enabled, watching its own
+# namespace. The browser reaches it via `kubectl port-forward`.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cryo
+  namespace: cryo-ui
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cryo
+  namespace: cryo-ui
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "delete", "deletecollection"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["get", "list", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cryo
+  namespace: cryo-ui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cryo
+subjects:
+  - kind: ServiceAccount
+    name: cryo
+    namespace: cryo-ui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cryo
+  namespace: cryo-ui
+  labels:
+    app: cryo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cryo
+  template:
+    metadata:
+      labels:
+        app: cryo
+    spec:
+      serviceAccountName: cryo
+      containers:
+        - name: controller
+          image: localhost:5001/cryo-controller:test
+          imagePullPolicy: Always
+          env:
+            - name: TARGET_NAMESPACE
+              value: cryo-ui
+            - name: AUTH_BASIC_ENABLED
+              value: "true"
+            - name: STATIC_HOSTING
+              value: "true"
+            - name: DEV
+              value: "false"
+            - name: LOG_LEVEL
+              value: info
+            - name: PORT
+              value: "8080"
+            - name: PSQL_BACKUP_IMAGE
+              value: localhost:5001/cryo-psql:test
+            - name: S3_BACKUP_IMAGE
+              value: localhost:5001/cryo-s3:test
+            - name: PVC_BACKUP_IMAGE
+              value: localhost:5001/cryo-pvc:test
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cryo
+  namespace: cryo-ui
+spec:
+  selector:
+    app: cryo
+  ports:
+    - port: 8080
+      targetPort: 8080

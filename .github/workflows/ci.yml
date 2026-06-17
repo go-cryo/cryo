@@ -89,6 +89,54 @@ jobs:
           CRYO_S3_IMAGE: localhost:5001/cryo-s3:test
           CRYO_PVC_IMAGE: localhost:5001/cryo-pvc:test
 
+  # Playwright UI e2e: deploys the controller in-cluster with BasicAuth and
+  # drives the full backup lifecycle through the browser against RustFS.
+  ui-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Create KIND cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: cryo-test
+          config: test/e2e/kind-config.yaml
+
+      # Registry + backup images (the UI flow only exercises S3, so skip CSI)
+      - name: Local registry + backup images
+        run: SKIP_CSI=true ./hack/cluster-up.sh
+
+      - name: Install UI deps + browser
+        working-directory: ui
+        run: |
+          bun install --frozen-lockfile
+          ./node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Bring up controller + RustFS
+        run: ./hack/playwright-up.sh
+
+      - name: Run Playwright tests
+        working-directory: ui
+        run: |
+          set -a; source .e2e-env; set +a
+          bun run test:e2e
+
+      - name: Tear down stack
+        if: always()
+        run: ./hack/playwright-down.sh
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: ui/playwright-report
+          if-no-files-found: ignore
+
   gitleaks:
     runs-on: ubuntu-latest
     steps:
