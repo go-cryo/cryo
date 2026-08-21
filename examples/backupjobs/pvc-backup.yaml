@@ -14,6 +14,10 @@ data:
       claimName: my-application-data
       volumeSnapshotClassName: csi-hostpath-snapclass
       snapshotRetention: 3
+      # Staging PVC class; defaults to the source PVC's class. Set this when the
+      # source class uses reclaimPolicy Retain — otherwise every run leaves a
+      # Released PV holding a full volume clone.
+      stagingStorageClassName: csi-hostpath-sc
     retention:
       keepLast: 7
       keepDaily: 30

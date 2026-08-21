@@ -137,7 +137,7 @@ Backup jobs are stored as **Kubernetes ConfigMaps** with label `go-cryo.github.c
 **Type-specific blocks**:
 - `psql`: `hostname`, `port`, `username`, `database`, `passwordSecretRef`
 - `s3`: `endpoint`, `bucket`, `credentialsSecretRef`
-- `pvc`: `claimName`, `volumeSnapshotClassName`, `snapshotRetention`
+- `pvc`: `claimName`, `volumeSnapshotClassName`, `snapshotRetention`, `stagingStorageClassName`
 
 ### UI Structure (`ui/src/`)
 

@@ -76,6 +76,7 @@ pvc:
   claimName: my-pvc
   volumeSnapshotClassName: csi-snapclass
   snapshotRetention: 3
+  stagingStorageClassName: fast-delete
 `
 	cfg, err := ParseConfig(yaml)
 	if err != nil {
@@ -95,6 +96,9 @@ pvc:
 	}
 	if cfg.PVC.SnapshotRetention != 3 {
 		t.Errorf("PVC.SnapshotRetention = %d, want %d", cfg.PVC.SnapshotRetention, 3)
+	}
+	if cfg.PVC.StagingStorageClassName != "fast-delete" {
+		t.Errorf("PVC.StagingStorageClassName = %q, want %q", cfg.PVC.StagingStorageClassName, "fast-delete")
 	}
 }
 

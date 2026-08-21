@@ -105,6 +105,16 @@ func (o *PVCOrchestrator) Run(ctx context.Context, job *backupjob.BackupJob, job
 	}
 	storageSize := sourcePVC.Spec.Resources.Requests[corev1.ResourceStorage]
 
+	// Default to the source PVC's storage class so the correct CSI driver
+	// provisions the volume from the snapshot. stagingStorageClassName overrides
+	// this: a source on a Retain-policy class would leak a Released PV (and its
+	// full volume clone) on every run, so staging typically wants the Delete-policy
+	// sibling class of the same driver.
+	stagingStorageClass := sourcePVC.Spec.StorageClassName
+	if pvcCfg.StagingStorageClassName != "" {
+		stagingStorageClass = &pvcCfg.StagingStorageClassName
+	}
+
 	// Step 4: Create temp PVC from snapshot
 	tempPVCName := jobName + "-tmp"
 	log.Info().Str("pvc", tempPVCName).Msg("creating temporary PVC from snapshot")
@@ -129,9 +139,7 @@ func (o *PVCOrchestrator) Run(ctx context.Context, job *backupjob.BackupJob, job
 				Kind:     "VolumeSnapshot",
 				Name:     snapshotName,
 			},
-			// Use the same storage class as the source PVC so the correct
-			// CSI driver provisions the volume from the snapshot.
-			StorageClassName: sourcePVC.Spec.StorageClassName,
+			StorageClassName: stagingStorageClass,
 		},
 	}
 

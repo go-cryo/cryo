@@ -58,6 +58,7 @@ type PVCConfig struct {
 	ClaimName               string `json:"claimName" yaml:"claimName"`
 	VolumeSnapshotClassName string `json:"volumeSnapshotClassName,omitempty" yaml:"volumeSnapshotClassName,omitempty"`
 	SnapshotRetention       int    `json:"snapshotRetention,omitempty" yaml:"snapshotRetention,omitempty"`
+	StagingStorageClassName string `json:"stagingStorageClassName,omitempty" yaml:"stagingStorageClassName,omitempty"`
 }
 
 type SecretKeyRef struct {
