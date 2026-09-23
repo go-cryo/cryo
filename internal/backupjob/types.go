@@ -22,6 +22,7 @@ type BackupJob struct {
 	PSQL          *PSQLConfig      `json:"psql,omitempty"`
 	S3            *S3Config        `json:"s3,omitempty"`
 	PVC           *PVCConfig       `json:"pvc,omitempty"`
+	CreatedAt     time.Time        `json:"createdAt"`
 	LastRun       *BackupRun       `json:"lastRun,omitempty"`
 	NextRun       *time.Time       `json:"nextRun,omitempty"`
 }

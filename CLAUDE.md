@@ -68,13 +68,14 @@ restic-backed snapshot browsing works natively.
 | `repositoryhost/` | Storage backend hosts (S3, SFTP, REST, local). Provider interface with Kubernetes Secrets storage |
 | `repository/` | Restic repositories. References a host + path. Provider interface with Kubernetes Secrets storage |
 | `restic/` | Restic CLI wrapper — `Check()` and `ListSnapshots()` via shell exec |
-| `kubernetes/` | Kubernetes client, kubeconfig auto-detection, ConfigMap watch notifier with OnAdd/OnUpdate/OnDelete callbacks |
+| `kubernetes/` | Kubernetes client (apiserver calls retried on transport errors via `retry_transport.go`), kubeconfig auto-detection, ConfigMap watch notifier with OnAdd/OnUpdate/OnDelete callbacks |
 | `backupjob/` | BackupJob types, YAML config parsing, Provider interface, and Kubernetes ConfigMap-based storage |
 | `scheduler/` | Cron scheduler using `robfig/cron/v3`. Maps backup jobs to cron entries, supports SyncAll/SyncJob/RemoveJob/TriggerNow |
 | `executor/` | Creates K8s Jobs for PSQL/S3/PVC backups. Resolves repo credentials via repository.Provider. PVC orchestrator handles VolumeSnapshot lifecycle |
 | `event/` | Event system with WebSocket support for real-time UI updates (10s ping interval). Includes EventObjectBackupJob and EventObjectBackupRun constants |
 | `web/` | UI hosting — embeds static files in production, reverse proxies to Quasar dev server in dev mode |
 | `util/` | Configuration (go-config), logging (zerolog), helper functions |
+| `alert/` | SMTP alert mails: failed runs (executor `OnRunFailed` hook) and overdue jobs (15 min check against Job history) |
 
 ### Entry Point
 
@@ -184,6 +185,14 @@ Environment variables via `github.com/mxcd/go-config` (`internal/util/config.go`
 | `PSQL_BACKUP_IMAGE` | `ghcr.io/go-cryo/cryo-psql:latest` | Docker image for PSQL backup jobs |
 | `S3_BACKUP_IMAGE` | `ghcr.io/go-cryo/cryo-s3:latest` | Docker image for S3 backup jobs |
 | `PVC_BACKUP_IMAGE` | `ghcr.io/go-cryo/cryo-pvc:latest` | Docker image for PVC backup jobs |
+| `SMTP_HOST` | | SMTP server for alert mails; empty disables alerting |
+| `SMTP_PORT` | `587` | SMTP port; `465` uses implicit TLS, others STARTTLS when offered |
+| `SMTP_USERNAME` | | SMTP username (Resend relay: `resend`) |
+| `SMTP_PASSWORD` | | SMTP password (Resend relay: the API key) |
+| `ALERT_EMAIL_FROM` | | Sender address, required when `SMTP_HOST` is set |
+| `ALERT_EMAIL_TO` | | Comma-separated recipients, required when `SMTP_HOST` is set |
+| `ALERT_SUBJECT_PREFIX` | `[cryo]` | Subject prefix, e.g. to tell clusters apart |
+| `ALERT_OVERDUE_HOURS` | `6` | Hours past a scheduled run without a successful run before an overdue alert |
 
 ## Key Dependencies
 

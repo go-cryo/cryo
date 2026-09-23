@@ -309,5 +309,6 @@ func configMapToBackupJob(cm *corev1.ConfigMap) (*BackupJob, error) {
 		PSQL:          cfg.PSQL,
 		S3:            cfg.S3,
 		PVC:           cfg.PVC,
+		CreatedAt:     cm.CreationTimestamp.Time,
 	}, nil
 }

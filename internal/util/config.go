@@ -43,6 +43,16 @@ func InitConfig(version string) error {
 
 		// Session keys (shared by both auth methods)
 		config.String("AUTH_SESSION_SECRET_NAME").Default("cryo-session-keys"),
+
+		// Alert mails (disabled while SMTP_HOST is empty)
+		config.String("SMTP_HOST").Default(""),
+		config.Int("SMTP_PORT").Default(587),
+		config.String("SMTP_USERNAME").Default(""),
+		config.String("SMTP_PASSWORD").Default("").Sensitive(),
+		config.String("ALERT_EMAIL_FROM").Default(""),
+		config.StringArray("ALERT_EMAIL_TO").Default([]string{}),
+		config.String("ALERT_SUBJECT_PREFIX").Default("[cryo]"),
+		config.Int("ALERT_OVERDUE_HOURS").Default(6),
 	})
 	return err
 }

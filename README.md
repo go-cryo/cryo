@@ -74,6 +74,23 @@ Cryo is configured via environment variables:
 | `PSQL_BACKUP_IMAGE` | `ghcr.io/go-cryo/cryo-psql:latest` | PostgreSQL backup worker image |
 | `S3_BACKUP_IMAGE` | `ghcr.io/go-cryo/cryo-s3:latest` | S3 backup worker image |
 | `PVC_BACKUP_IMAGE` | `ghcr.io/go-cryo/cryo-pvc:latest` | PVC backup worker image |
+| `SMTP_HOST` | | SMTP server for alert mails; empty disables alerting |
+| `SMTP_PORT` | `587` | SMTP port; `465` uses implicit TLS, others STARTTLS when offered |
+| `SMTP_USERNAME` | | SMTP username (Resend relay: `resend`) |
+| `SMTP_PASSWORD` | | SMTP password (Resend relay: the API key) |
+| `ALERT_EMAIL_FROM` | | Sender address, required when `SMTP_HOST` is set |
+| `ALERT_EMAIL_TO` | | Comma-separated recipients, required when `SMTP_HOST` is set |
+| `ALERT_SUBJECT_PREFIX` | `[cryo]` | Subject prefix, e.g. to tell clusters apart |
+| `ALERT_OVERDUE_HOURS` | `6` | Hours past a scheduled run without a successful run before an overdue alert |
+
+### Alerting
+
+With `SMTP_HOST` set, Cryo mails `ALERT_EMAIL_TO`:
+
+- **on every failed run**, scheduled or manual, with the error;
+- **when a job is overdue**: its latest scheduled run is more than `ALERT_OVERDUE_HOURS` old and no run has succeeded since. This catches runs that never started. Overdue jobs are checked every 15 minutes, batched into one mail, and alerted once per missed run.
+
+Success history comes from the backup Kubernetes Jobs, which expire after the job TTL (default 7 days), so schedules must run more often than that. Resend works through its SMTP relay: `SMTP_HOST=smtp.resend.com`, `SMTP_PORT=465`, `SMTP_USERNAME=resend`, `SMTP_PASSWORD=<api key>`.
 
 ## Development
 

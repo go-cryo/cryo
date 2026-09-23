@@ -33,6 +33,9 @@ type Executor struct {
 	orchestrator     *PVCOrchestrator
 	options          *ExecutorOptions
 	settingsProvider settings.Provider
+
+	// OnRunFailed, if set, is called after every failed run (scheduled or manual).
+	OnRunFailed func(job *backupjob.BackupJob, run *backupjob.BackupRun)
 }
 
 func NewExecutor(clientSet kubernetes.Interface, repoProvider repository.Provider, runStore *RunStore, orchestrator *PVCOrchestrator, options *ExecutorOptions, settingsProvider settings.Provider) *Executor {
@@ -82,6 +85,9 @@ func (e *Executor) Execute(ctx context.Context, job *backupjob.BackupJob) (*back
 		run.Status = backupjob.BackupRunStatusFailed
 		run.Message = err.Error()
 		log.Error().Err(err).Str("job", key).Msg("backup job execution failed")
+		if e.OnRunFailed != nil {
+			e.OnRunFailed(job, run)
+		}
 	} else {
 		run.Status = backupjob.BackupRunStatusSucceeded
 		log.Info().Str("job", key).Msg("backup job execution completed")

@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/go-cryo/cryo/internal/alert"
 	"github.com/go-cryo/cryo/internal/auth"
 	"github.com/go-cryo/cryo/internal/backupjob"
 	"github.com/go-cryo/cryo/internal/executor"
@@ -80,6 +82,30 @@ func main() {
 	)
 
 	sched := scheduler.NewScheduler(backupJobProvider, exec)
+
+	if smtpHost := config.Get().String("SMTP_HOST"); smtpHost != "" {
+		mailer := &alert.Mailer{
+			Host:     smtpHost,
+			Port:     config.Get().Int("SMTP_PORT"),
+			Username: config.Get().String("SMTP_USERNAME"),
+			Password: config.Get().String("SMTP_PASSWORD"),
+			From:     config.Get().String("ALERT_EMAIL_FROM"),
+			To:       config.Get().StringArray("ALERT_EMAIL_TO"),
+		}
+		if mailer.From == "" || len(mailer.To) == 0 {
+			log.Panic().Msg("SMTP_HOST is set but ALERT_EMAIL_FROM or ALERT_EMAIL_TO is empty")
+		}
+		alerter := alert.NewAlerter(
+			mailer,
+			config.Get().String("ALERT_SUBJECT_PREFIX"),
+			backupJobProvider,
+			runStore,
+			time.Duration(config.Get().Int("ALERT_OVERDUE_HOURS"))*time.Hour,
+		)
+		exec.OnRunFailed = alerter.RunFailed
+		go alerter.Run(ctx)
+		log.Info().Strs("to", mailer.To).Msg("alert mails enabled")
+	}
 
 	ensureRepoInitialized := func(ns, name string) {
 		ctx := context.Background()
