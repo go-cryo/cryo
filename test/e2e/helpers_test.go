@@ -116,7 +116,7 @@ func seedRustFS(ctx context.Context) error {
 					Containers: []corev1.Container{
 						{
 							Name:    "setup",
-							Image:   "minio/mc:latest",
+							Image:   "quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z",
 							Command: []string{"/bin/sh", "-c"},
 							Args: []string{
 								"until mc alias set rfs http://rustfs:9000 rustfsadmin rustfsadmin; do echo waiting for rustfs; sleep 2; done && " +
