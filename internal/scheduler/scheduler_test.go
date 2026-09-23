@@ -2,12 +2,15 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-cryo/cryo/internal/backupjob"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // --- mock executor ---
@@ -38,8 +41,9 @@ func (m *mockExecutor) count() int {
 // --- mock provider ---
 
 type mockProvider struct {
-	mu   sync.Mutex
-	jobs map[string]*backupjob.BackupJob
+	mu     sync.Mutex
+	jobs   map[string]*backupjob.BackupJob
+	getErr error
 }
 
 func newMockProvider() *mockProvider {
@@ -65,10 +69,12 @@ func (m *mockProvider) List(_ context.Context) ([]*backupjob.BackupJob, error) {
 func (m *mockProvider) Get(_ context.Context, namespace, name string) (*backupjob.BackupJob, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key := namespace + "/" + name
-	job, ok := m.jobs[key]
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	job, ok := m.jobs[namespace+"/"+name]
 	if !ok {
-		return nil, fmt.Errorf("backup job %s not found", key)
+		return nil, apierrors.NewNotFound(schema.GroupResource{Resource: "configmaps"}, name)
 	}
 	return job, nil
 }
@@ -219,6 +225,44 @@ func TestSyncJob_RemovesSuspendedJob(t *testing.T) {
 
 	if next := s.NextRun("default", "toggle-job"); next != nil {
 		t.Errorf("expected nil NextRun after suspending, got %v", next)
+	}
+}
+
+func TestSyncJob_KeepsScheduleOnTransientError(t *testing.T) {
+	provider := newMockProvider()
+	provider.addJob(&backupjob.BackupJob{
+		Name: "flaky", Namespace: "default",
+		Schedule: "*/5 * * * *",
+	})
+	s := NewScheduler(provider, &mockExecutor{})
+	s.Start()
+	defer s.Stop()
+	s.SyncJob(context.Background(), "default", "flaky")
+
+	provider.getErr = errors.New("net/http: TLS handshake timeout")
+	s.SyncJob(context.Background(), "default", "flaky")
+
+	if next := s.NextRun("default", "flaky"); next == nil {
+		t.Error("a transient apiserver error unscheduled the job")
+	}
+}
+
+func TestSyncJob_RemovesDeletedJob(t *testing.T) {
+	provider := newMockProvider()
+	provider.addJob(&backupjob.BackupJob{
+		Name: "gone", Namespace: "default",
+		Schedule: "*/5 * * * *",
+	})
+	s := NewScheduler(provider, &mockExecutor{})
+	s.Start()
+	defer s.Stop()
+	s.SyncJob(context.Background(), "default", "gone")
+
+	delete(provider.jobs, "default/gone")
+	s.SyncJob(context.Background(), "default", "gone")
+
+	if next := s.NextRun("default", "gone"); next != nil {
+		t.Errorf("expected deleted job to be unscheduled, got NextRun %v", next)
 	}
 }
 

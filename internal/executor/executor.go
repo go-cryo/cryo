@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -383,37 +384,48 @@ func (e *Executor) createAndWaitJob(ctx context.Context, namespace, jobName, bac
 
 	log.Info().Str("job", created.Namespace+"/"+created.Name).Msg("created kubernetes backup job")
 
-	err = e.waitForJobCompletion(ctx, namespace, jobName)
+	err = waitForJob(ctx, e.clientSet, namespace, jobName)
 	e.cleanupJobPods(ctx, namespace, jobName)
 	return err
 }
 
-func (e *Executor) waitForJobCompletion(ctx context.Context, namespace, jobName string) error {
-	watcher, err := e.clientSet.BatchV1().Jobs(namespace).Watch(ctx, metav1.ListOptions{
-		FieldSelector: "metadata.name=" + jobName,
-	})
-	if err != nil {
-		return fmt.Errorf("watching job %s/%s: %w", namespace, jobName, err)
-	}
-	defer watcher.Stop()
+// jobPollInterval is a var so tests can shorten it.
+var jobPollInterval = 10 * time.Second
 
-	for event := range watcher.ResultChan() {
-		job, ok := event.Object.(*batchv1.Job)
-		if !ok {
-			continue
+// waitForJob polls the Job instead of watching it: the apiserver closes every
+// watch after its request timeout (30-60 min), which marked each long-running
+// backup failed while it was still running.
+func waitForJob(ctx context.Context, clientSet kubernetes.Interface, namespace, jobName string) error {
+	ticker := time.NewTicker(jobPollInterval)
+	defer ticker.Stop()
+
+	for {
+		job, err := clientSet.BatchV1().Jobs(namespace).Get(ctx, jobName, metav1.GetOptions{})
+		switch {
+		case apierrors.IsNotFound(err):
+			return fmt.Errorf("job %s/%s disappeared before completion", namespace, jobName)
+		case err != nil:
+			log.Warn().Err(err).Str("job", namespace+"/"+jobName).Msg("failed to poll backup job, retrying")
+		default:
+			for _, condition := range job.Status.Conditions {
+				if condition.Status != corev1.ConditionTrue {
+					continue
+				}
+				if condition.Type == batchv1.JobComplete {
+					return nil
+				}
+				if condition.Type == batchv1.JobFailed {
+					return fmt.Errorf("job %s/%s failed: %s", namespace, jobName, condition.Message)
+				}
+			}
 		}
 
-		for _, condition := range job.Status.Conditions {
-			if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
-				return nil
-			}
-			if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
-				return fmt.Errorf("job %s/%s failed: %s", namespace, jobName, condition.Message)
-			}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
 		}
 	}
-
-	return fmt.Errorf("job %s/%s watch ended without completion", namespace, jobName)
 }
 
 func (e *Executor) cleanupJobPods(ctx context.Context, namespace, jobName string) {

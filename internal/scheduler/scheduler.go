@@ -8,6 +8,7 @@ import (
 	"github.com/go-cryo/cryo/internal/backupjob"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog/log"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type Executor interface {
@@ -59,9 +60,14 @@ func (s *Scheduler) SyncJob(ctx context.Context, namespace, name string) {
 	key := namespace + "/" + name
 
 	job, err := s.provider.Get(ctx, namespace, name)
-	if err != nil {
-		log.Warn().Err(err).Str("job", key).Msg("failed to get backup job for sync, removing schedule")
+	if apierrors.IsNotFound(err) {
 		s.RemoveJob(namespace, name)
+		return
+	}
+	if err != nil {
+		// Transient apiserver errors must not unschedule a job: that silently
+		// skipped nightly backups until the next informer re-list.
+		log.Warn().Err(err).Str("job", key).Msg("failed to get backup job for sync, keeping current schedule")
 		return
 	}
 

@@ -62,6 +62,8 @@ func NewClient(options *ClientOptions) (*Client, error) {
 		}
 	}
 
+	config.Wrap(newRetryTransport)
+
 	log.Trace().Msg("Creating Kubernetes clientset")
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {

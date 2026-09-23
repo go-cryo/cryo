@@ -220,7 +220,7 @@ func (o *PVCOrchestrator) Run(ctx context.Context, job *backupjob.BackupJob, job
 	}
 
 	// Step 7: Wait for job completion
-	err = o.waitForJobCompletion(ctx, namespace, jobName)
+	err = waitForJob(ctx, o.clientSet, namespace, jobName)
 
 	// Step 8: Cleanup job pods and temp PVC
 	o.cleanupJobPods(ctx, namespace, jobName)
@@ -270,34 +270,6 @@ func (o *PVCOrchestrator) waitForSnapshotReady(ctx context.Context, namespace, n
 			}
 		}
 	}
-}
-
-func (o *PVCOrchestrator) waitForJobCompletion(ctx context.Context, namespace, jobName string) error {
-	watcher, err := o.clientSet.BatchV1().Jobs(namespace).Watch(ctx, metav1.ListOptions{
-		FieldSelector: "metadata.name=" + jobName,
-	})
-	if err != nil {
-		return fmt.Errorf("watching job %s/%s: %w", namespace, jobName, err)
-	}
-	defer watcher.Stop()
-
-	for event := range watcher.ResultChan() {
-		job, ok := event.Object.(*batchv1.Job)
-		if !ok {
-			continue
-		}
-
-		for _, condition := range job.Status.Conditions {
-			if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
-				return nil
-			}
-			if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
-				return fmt.Errorf("job %s/%s failed: %s", namespace, jobName, condition.Message)
-			}
-		}
-	}
-
-	return fmt.Errorf("job %s/%s watch ended without completion", namespace, jobName)
 }
 
 func (o *PVCOrchestrator) cleanupJobPods(ctx context.Context, namespace, jobName string) {
