@@ -115,6 +115,11 @@ func (o *PVCOrchestrator) Run(ctx context.Context, job *backupjob.BackupJob, job
 		stagingStorageClass = &pvcCfg.StagingStorageClassName
 	}
 
+	accessMode, err := stagingAccessMode(pvcCfg)
+	if err != nil {
+		return err
+	}
+
 	// Step 4: Create temp PVC from snapshot
 	tempPVCName := jobName + "-tmp"
 	log.Info().Str("pvc", tempPVCName).Msg("creating temporary PVC from snapshot")
@@ -126,9 +131,9 @@ func (o *PVCOrchestrator) Run(ctx context.Context, job *backupjob.BackupJob, job
 			Namespace: namespace,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			// Use ReadWriteOnce since many provisioners don't support ReadOnlyMany.
-			// The pod spec mounts the volume read-only regardless.
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			// ReadWriteOnce by default since many provisioners don't support
+			// ReadOnlyMany. The pod spec mounts the volume read-only regardless.
+			AccessModes: []corev1.PersistentVolumeAccessMode{accessMode},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: storageSize,
@@ -236,6 +241,19 @@ func (o *PVCOrchestrator) Run(ctx context.Context, job *backupjob.BackupJob, job
 	}
 
 	return nil
+}
+
+// stagingAccessMode returns the access mode for the staging PVC: ReadWriteOnce
+// unless the config asks for another valid mode.
+func stagingAccessMode(cfg *backupjob.PVCConfig) (corev1.PersistentVolumeAccessMode, error) {
+	switch mode := corev1.PersistentVolumeAccessMode(cfg.StagingAccessMode); mode {
+	case "":
+		return corev1.ReadWriteOnce, nil
+	case corev1.ReadWriteOnce, corev1.ReadOnlyMany, corev1.ReadWriteMany, corev1.ReadWriteOncePod:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid pvc.stagingAccessMode %q", cfg.StagingAccessMode)
+	}
 }
 
 func (o *PVCOrchestrator) waitForSnapshotReady(ctx context.Context, namespace, name string) error {

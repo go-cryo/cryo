@@ -60,6 +60,11 @@ type PVCConfig struct {
 	VolumeSnapshotClassName string `json:"volumeSnapshotClassName,omitempty" yaml:"volumeSnapshotClassName,omitempty"`
 	SnapshotRetention       int    `json:"snapshotRetention,omitempty" yaml:"snapshotRetention,omitempty"`
 	StagingStorageClassName string `json:"stagingStorageClassName,omitempty" yaml:"stagingStorageClassName,omitempty"`
+	// StagingAccessMode is the access mode of the staging PVC restored from the
+	// snapshot (default ReadWriteOnce). ReadOnlyMany lets CSI drivers that support
+	// it mount the snapshot directly instead of cloning it, e.g. ceph-csi CephFS
+	// with a backingSnapshot: "true" StorageClass.
+	StagingAccessMode string `json:"stagingAccessMode,omitempty" yaml:"stagingAccessMode,omitempty"`
 }
 
 type SecretKeyRef struct {

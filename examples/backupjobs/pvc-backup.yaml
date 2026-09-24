@@ -18,6 +18,10 @@ data:
       # source class uses reclaimPolicy Retain — otherwise every run leaves a
       # Released PV holding a full volume clone.
       stagingStorageClassName: csi-hostpath-sc
+      # Access mode of the staging PVC (default ReadWriteOnce). ReadOnlyMany plus a
+      # shallow-snapshot StorageClass (ceph-csi CephFS: backingSnapshot: "true") backs
+      # up straight from the snapshot instead of a full clone.
+      # stagingAccessMode: ReadOnlyMany
     retention:
       keepLast: 7
       keepDaily: 30

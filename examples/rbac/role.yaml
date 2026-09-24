@@ -20,7 +20,7 @@ rules:
   # Backup execution jobs
   - apiGroups: ["batch"]
     resources: ["jobs"]
-    verbs: ["create", "list", "watch"]
+    verbs: ["get", "create", "list", "watch"]
 
   # Cleanup of completed job pods
   - apiGroups: [""]

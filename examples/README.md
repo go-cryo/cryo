@@ -167,6 +167,7 @@ Creates a VolumeSnapshot of a PersistentVolumeClaim, mounts the snapshot as a te
 | `pvc.volumeSnapshotClassName` | no | VolumeSnapshotClass to use |
 | `pvc.snapshotRetention` | no | Number of VolumeSnapshots to retain |
 | `pvc.stagingStorageClassName` | no | StorageClass for the temporary staging PVC (defaults to the source PVC's class — override when the source class has a `Retain` reclaim policy, which would leak a Released PV per run) |
+| `pvc.stagingAccessMode` | no | Access mode of the staging PVC (default `ReadWriteOnce`). `ReadOnlyMany` lets drivers that support it mount the snapshot without cloning it — e.g. ceph-csi CephFS with a StorageClass that sets `backingSnapshot: "true"` (shallow read-only volume). A `ReadWriteOnce` restore from a CephFS snapshot is a full data copy |
 
 **Prerequisites:**
 - A CSI driver with snapshot support installed in the cluster
