@@ -115,8 +115,9 @@ func seedRustFS(ctx context.Context) error {
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{
 						{
-							Name:    "setup",
-							Image:   "quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z",
+							Name: "setup",
+							// The cryo S3 backup image ships mc (MinIO no longer publishes it).
+							Image:   envOrDefault("CRYO_S3_IMAGE", "localhost:5001/cryo-s3:test"),
 							Command: []string{"/bin/sh", "-c"},
 							Args: []string{
 								"until mc alias set rfs http://rustfs:9000 rustfsadmin rustfsadmin; do echo waiting for rustfs; sleep 2; done && " +
@@ -194,8 +195,8 @@ func seedTestPVC(ctx context.Context) error {
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{
 						{
-							Name:  "setup",
-							Image: "alpine:3.20",
+							Name:    "setup",
+							Image:   "alpine:3.20",
 							Command: []string{"/bin/sh", "-c"},
 							Args: []string{
 								"mkdir -p /data/subdir && " +

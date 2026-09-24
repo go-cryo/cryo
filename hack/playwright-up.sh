@@ -61,7 +61,8 @@ spec:
       restartPolicy: Never
       containers:
         - name: seed
-          image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+          # cryo S3 backup image ships mc (MinIO no longer publishes it)
+          image: localhost:5001/cryo-s3:test
           command: ["/bin/sh", "-c"]
           args:
             - >

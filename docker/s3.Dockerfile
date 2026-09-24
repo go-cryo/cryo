@@ -1,12 +1,16 @@
+# MinIO stopped publishing mc: dl.min.io answers 410, docker.io/minio/mc and
+# quay.io/minio/mc are gone (401). Build the pinned release from source instead.
+FROM golang:1.25-alpine AS mc
+ARG MC_VERSION=RELEASE.2025-08-13T08-35-41Z
+RUN CGO_ENABLED=0 go install -trimpath -ldflags "-s -w" github.com/minio/mc@${MC_VERSION}
+
 FROM alpine:3.23.3
 
 ARG TARGETARCH
 ARG RESTIC_VERSION=0.18.1
 
-# mc (MinIO client) and restic are statically linked, so they run on musl/alpine.
-# dl.min.io stopped serving mc binaries (HTTP 410), so copy it from MinIO's last
-# published multi-arch image instead.
-COPY --from=quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z /usr/bin/mc /usr/local/bin/mc
+# mc and restic are statically linked, so they run on musl/alpine.
+COPY --from=mc /go/bin/mc /usr/local/bin/mc
 RUN mc --version
 
 RUN apk add --no-cache ca-certificates bash curl bzip2 && \
