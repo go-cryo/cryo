@@ -11,6 +11,7 @@
 #
 # Optional environment variables:
 # - TEMP_DIR (defaults to /tmp/s3-backup)
+# - MC_MAX_WORKERS (concurrent mirror copies, defaults to 4)
 
 # Temporary directory for S3 mirror
 TEMP_DIR="${TEMP_DIR:-/tmp/s3-backup}"
@@ -70,7 +71,9 @@ fi
 echo "Mirroring S3 bucket to temporary directory: $TEMP_DIR"
 echo "Bucket: s3backup/$S3_BUCKET"
 
-mc mirror --quiet "s3backup/$S3_BUCKET" "$TEMP_DIR"
+# Bounded workers: mc's autodetect ramps up until the S3 source stalls and aborts
+# streams (RustFS on a single ceph-rbd volume), which failed the whole mirror.
+mc mirror --quiet --retry --max-workers "${MC_MAX_WORKERS:-4}" "s3backup/$S3_BUCKET" "$TEMP_DIR"
 
 if [ $? -eq 0 ]; then
   echo "S3 bucket mirrored successfully"
