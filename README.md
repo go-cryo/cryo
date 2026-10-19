@@ -146,7 +146,7 @@ Cryo stores all configuration as native Kubernetes resources:
 - **Backup Jobs** -- ConfigMaps with YAML configuration (type, schedule, retention, source)
 - **Settings** -- ConfigMap for global settings (job TTL, default storage class)
 
-The controller watches these resources, schedules backup jobs via cron, and creates Kubernetes Jobs for each backup execution. Backup workers run as short-lived pods that perform the actual restic operations.
+The controller watches these resources, schedules backup jobs via cron, and creates Kubernetes Jobs for each backup execution. Backup workers run as short-lived pods that perform the actual restic operations; a failed worker pod is retried once (`backoffLimit: 1`) before the run counts as failed.
 
 ## API
 

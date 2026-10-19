@@ -339,7 +339,10 @@ func (e *Executor) executePVC(ctx context.Context, job *backupjob.BackupJob, run
 	return e.orchestrator.Run(ctx, job, jobName)
 }
 
-const workerBackoffLimit int32 = 0
+// workerBackoffLimit lets Kubernetes retry a failed worker pod once, so one
+// transient error (pg_dump racing a DROP, a flaky S3 endpoint) does not cost the
+// whole night. The retry reuses the run's staging or temp PVC.
+const workerBackoffLimit int32 = 1
 
 // runWorkerJob runs the backup worker Job of every backup type to completion
 // and deletes its pods.
