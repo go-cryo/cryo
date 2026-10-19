@@ -26,8 +26,11 @@ for var in "${REQUIRED_VARS[@]}"; do
   fi
 done
 
-# Create temporary directory
-mkdir -p $TEMP_DIR
+# Start from an empty directory: a retried pod reuses the run's staging PVC, and
+# mc mirror keeps whatever a killed attempt left there (objects changed or deleted
+# since, partial downloads), so the snapshot would carry stale data.
+rm -rf "$TEMP_DIR"
+mkdir -p "$TEMP_DIR"
 
 # Cleanup function
 cleanup() {
