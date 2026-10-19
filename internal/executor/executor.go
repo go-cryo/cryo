@@ -226,7 +226,7 @@ func (e *Executor) executePSQL(ctx context.Context, job *backupjob.BackupJob, ru
 		},
 	}
 
-	return e.createAndWaitJob(ctx, job.Namespace, jobName, job.Name, image, envVars, volumes, volumeMounts)
+	return runWorkerJob(ctx, e.clientSet, e.settingsProvider, job.Namespace, jobName, job.Name, image, envVars, volumes, volumeMounts)
 }
 
 func (e *Executor) executeS3(ctx context.Context, job *backupjob.BackupJob, run *backupjob.BackupRun) error {
@@ -324,7 +324,7 @@ func (e *Executor) executeS3(ctx context.Context, job *backupjob.BackupJob, run 
 		},
 	}
 
-	return e.createAndWaitJob(ctx, job.Namespace, jobName, job.Name, image, envVars, volumes, volumeMounts)
+	return runWorkerJob(ctx, e.clientSet, e.settingsProvider, job.Namespace, jobName, job.Name, image, envVars, volumes, volumeMounts)
 }
 
 func (e *Executor) executePVC(ctx context.Context, job *backupjob.BackupJob, run *backupjob.BackupRun) error {
@@ -339,11 +339,15 @@ func (e *Executor) executePVC(ctx context.Context, job *backupjob.BackupJob, run
 	return e.orchestrator.Run(ctx, job, jobName)
 }
 
-func (e *Executor) createAndWaitJob(ctx context.Context, namespace, jobName, backupJobName, image string, envVars []corev1.EnvVar, volumes []corev1.Volume, volumeMounts []corev1.VolumeMount) error {
-	var backoffLimit int32 = 0
+const workerBackoffLimit int32 = 0
+
+// runWorkerJob runs the backup worker Job of every backup type to completion
+// and deletes its pods.
+func runWorkerJob(ctx context.Context, clientSet kubernetes.Interface, settingsProvider settings.Provider, namespace, jobName, backupJobName, image string, envVars []corev1.EnvVar, volumes []corev1.Volume, volumeMounts []corev1.VolumeMount) error {
+	backoffLimit := workerBackoffLimit
 	ttl := int32(604800) // 7 days default
-	if e.settingsProvider != nil {
-		if s, err := e.settingsProvider.Get(ctx); err == nil && s.JobTTLSeconds > 0 {
+	if settingsProvider != nil {
+		if s, err := settingsProvider.Get(ctx); err == nil && s.JobTTLSeconds > 0 {
 			ttl = s.JobTTLSeconds
 		}
 	}
@@ -369,29 +373,24 @@ func (e *Executor) createAndWaitJob(ctx context.Context, namespace, jobName, bac
 							Image:           image,
 							ImagePullPolicy: corev1.PullAlways,
 							Env:             envVars,
+							VolumeMounts:    volumeMounts,
 						},
 					},
+					Volumes: volumes,
 				},
 			},
 		},
 	}
 
-	if len(volumes) > 0 {
-		k8sJob.Spec.Template.Spec.Volumes = volumes
-	}
-	if len(volumeMounts) > 0 {
-		k8sJob.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
-	}
-
-	created, err := e.clientSet.BatchV1().Jobs(namespace).Create(ctx, k8sJob, metav1.CreateOptions{})
+	created, err := clientSet.BatchV1().Jobs(namespace).Create(ctx, k8sJob, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("creating kubernetes job %s/%s: %w", namespace, jobName, err)
 	}
 
 	log.Info().Str("job", created.Namespace+"/"+created.Name).Msg("created kubernetes backup job")
 
-	err = waitForJob(ctx, e.clientSet, namespace, jobName)
-	e.cleanupJobPods(ctx, namespace, jobName)
+	err = waitForJob(ctx, clientSet, namespace, jobName)
+	cleanupJobPods(ctx, clientSet, namespace, jobName)
 	return err
 }
 
@@ -434,9 +433,9 @@ func waitForJob(ctx context.Context, clientSet kubernetes.Interface, namespace, 
 	}
 }
 
-func (e *Executor) cleanupJobPods(ctx context.Context, namespace, jobName string) {
+func cleanupJobPods(ctx context.Context, clientSet kubernetes.Interface, namespace, jobName string) {
 	labelSelector := fmt.Sprintf("job-name=%s", jobName)
-	err := e.clientSet.CoreV1().Pods(namespace).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{
+	err := clientSet.CoreV1().Pods(namespace).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
 	if err != nil {

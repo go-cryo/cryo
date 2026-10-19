@@ -11,7 +11,6 @@ import (
 	"github.com/go-cryo/cryo/internal/repository"
 	"github.com/go-cryo/cryo/internal/settings"
 	"github.com/rs/zerolog/log"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -154,7 +153,7 @@ func (o *PVCOrchestrator) Run(ctx context.Context, job *backupjob.BackupJob, job
 	}
 	log.Info().Str("pvc", tempPVCName).Msg("temporary PVC created, binding deferred to pod scheduling")
 
-	// Step 6: Create backup job
+	// Step 5: Run the backup job, then drop the temp PVC whatever the outcome
 	image := job.Image
 	if image == "" {
 		image = o.pvcBackupImage
@@ -165,77 +164,32 @@ func (o *PVCOrchestrator) Run(ctx context.Context, job *backupjob.BackupJob, job
 	envVars = append(envVars, retentionEnvVars(job.Retention)...)
 	envVars = append(envVars, corev1.EnvVar{Name: "BACKUP_HOST", Value: pvcCfg.ClaimName + "-backup"})
 
-	var backoffLimit int32 = 0
-	ttl := int32(604800) // 7 days default
-	if o.settingsProvider != nil {
-		if s, err := o.settingsProvider.Get(ctx); err == nil && s.JobTTLSeconds > 0 {
-			ttl = s.JobTTLSeconds
-		}
-	}
-	k8sJob := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName,
-			Namespace: namespace,
-			Labels: map[string]string{
-				"go-cryo.github.com/backup-job":           job.Name,
-				"go-cryo.github.com/backup-job-namespace": namespace,
-			},
-		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit:            &backoffLimit,
-			TTLSecondsAfterFinished: &ttl,
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
-					Containers: []corev1.Container{
-						{
-							Name:            "backup",
-							Image:           image,
-							ImagePullPolicy: corev1.PullAlways,
-							Env:             envVars,
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "data",
-									MountPath: "/data",
-									ReadOnly:  true,
-								},
-							},
-						},
-					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "data",
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: tempPVCName,
-									ReadOnly:  true,
-								},
-							},
-						},
-					},
+	volumes := []corev1.Volume{
+		{
+			Name: "data",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: tempPVCName,
+					ReadOnly:  true,
 				},
 			},
 		},
 	}
-
-	_, err = o.clientSet.BatchV1().Jobs(namespace).Create(ctx, k8sJob, metav1.CreateOptions{})
-	if err != nil {
-		o.cleanupTempPVC(ctx, namespace, tempPVCName)
-		return fmt.Errorf("creating backup job %s: %w", jobName, err)
+	volumeMounts := []corev1.VolumeMount{
+		{
+			Name:      "data",
+			MountPath: "/data",
+			ReadOnly:  true,
+		},
 	}
 
-	// Step 7: Wait for job completion
-	err = waitForJob(ctx, o.clientSet, namespace, jobName)
-
-	// Step 8: Cleanup job pods and temp PVC
-	o.cleanupJobPods(ctx, namespace, jobName)
+	err = runWorkerJob(ctx, o.clientSet, o.settingsProvider, namespace, jobName, job.Name, image, envVars, volumes, volumeMounts)
 	o.cleanupTempPVC(ctx, namespace, tempPVCName)
-
 	if err != nil {
 		return err
 	}
 
-	// Step 9: Prune old snapshots
+	// Step 6: Prune old snapshots
 	if pvcCfg.SnapshotRetention > 0 {
 		o.pruneSnapshots(ctx, namespace, job.Name, pvcCfg.SnapshotRetention)
 	}
@@ -287,18 +241,6 @@ func (o *PVCOrchestrator) waitForSnapshotReady(ctx context.Context, namespace, n
 				return nil
 			}
 		}
-	}
-}
-
-func (o *PVCOrchestrator) cleanupJobPods(ctx context.Context, namespace, jobName string) {
-	labelSelector := fmt.Sprintf("job-name=%s", jobName)
-	err := o.clientSet.CoreV1().Pods(namespace).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{
-		LabelSelector: labelSelector,
-	})
-	if err != nil {
-		log.Warn().Err(err).Str("job", jobName).Msg("failed to cleanup job pods")
-	} else {
-		log.Debug().Str("job", jobName).Msg("cleaned up job pods")
 	}
 }
 
