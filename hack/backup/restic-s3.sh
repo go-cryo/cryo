@@ -54,7 +54,7 @@ else
 fi
 
 # Check if restic repository exists, initialize if not
-echo "Checking restic repository: $RESTIC_REPOSITORY"
+echo "Checking restic repository"
 restic snapshots &>/dev/null
 if [ $? -ne 0 ]; then
   echo "Repository does not exist or is not accessible. Initializing..."
