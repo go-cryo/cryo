@@ -344,8 +344,16 @@ func (e *Executor) executePVC(ctx context.Context, job *backupjob.BackupJob, run
 // whole night. The retry reuses the run's staging or temp PVC.
 const workerBackoffLimit int32 = 1
 
+// Log tail of the failed worker pod that goes into the run error and the alert
+// mail. TailLines bounds the read, containerd splits log lines at 16 KiB.
+const (
+	failedLogTailLines int64 = 40
+	failedLogMaxBytes        = 4 << 10
+)
+
 // runWorkerJob runs the backup worker Job of every backup type to completion
-// and deletes its pods.
+// and deletes its pods. On failure the log tail of the newest failed pod is
+// wrapped into the error first: deleting the pods takes the real error with it.
 func runWorkerJob(ctx context.Context, clientSet kubernetes.Interface, settingsProvider settings.Provider, namespace, jobName, backupJobName, image string, envVars []corev1.EnvVar, volumes []corev1.Volume, volumeMounts []corev1.VolumeMount) error {
 	backoffLimit := workerBackoffLimit
 	ttl := int32(604800) // 7 days default
@@ -393,8 +401,58 @@ func runWorkerJob(ctx context.Context, clientSet kubernetes.Interface, settingsP
 	log.Info().Str("job", created.Namespace+"/"+created.Name).Msg("created kubernetes backup job")
 
 	err = waitForJob(ctx, clientSet, namespace, jobName)
+	if err != nil {
+		err = withFailedPodLogs(ctx, clientSet, namespace, jobName, err)
+	}
 	cleanupJobPods(ctx, clientSet, namespace, jobName)
 	return err
+}
+
+// withFailedPodLogs appends the log tail of the Job's newest failed pod to err.
+// Capture is best effort: if it fails, err comes back unchanged.
+func withFailedPodLogs(ctx context.Context, clientSet kubernetes.Interface, namespace, jobName string, err error) error {
+	podName, logs, logErr := failedPodLogs(ctx, clientSet, namespace, jobName)
+	if logErr != nil {
+		log.Warn().Err(logErr).Str("job", namespace+"/"+jobName).Msg("failed to capture logs of failed backup pod")
+		return err
+	}
+	return fmt.Errorf("%w\n\nlast log lines of pod %s:\n%s", err, podName, logs)
+}
+
+func failedPodLogs(ctx context.Context, clientSet kubernetes.Interface, namespace, jobName string) (podName, logs string, err error) {
+	pods, err := clientSet.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: "job-name=" + jobName})
+	if err != nil {
+		return "", "", fmt.Errorf("listing pods: %w", err)
+	}
+	var newest *corev1.Pod
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.Status.Phase == corev1.PodFailed && (newest == nil || newest.CreationTimestamp.Before(&pod.CreationTimestamp)) {
+			newest = pod
+		}
+	}
+	if newest == nil {
+		return "", "", fmt.Errorf("no failed pod found")
+	}
+
+	tail := failedLogTailLines
+	raw, err := clientSet.CoreV1().Pods(namespace).GetLogs(newest.Name, &corev1.PodLogOptions{Container: "backup", TailLines: &tail}).DoRaw(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("getting logs of pod %s: %w", newest.Name, err)
+	}
+	return newest.Name, tailBytes(strings.TrimSpace(string(raw)), failedLogMaxBytes), nil
+}
+
+// tailBytes keeps at most the last n bytes of s, starting at a line boundary.
+func tailBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	start := len(s) - n
+	if i := strings.IndexByte(s[start-1:], '\n'); i >= 0 {
+		start += i
+	}
+	return s[start:]
 }
 
 // jobPollInterval is a var so tests can shorten it.
